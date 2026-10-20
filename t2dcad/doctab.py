@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QMenu
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QMenu, QFrame, QLabel, QPushButton
 
 from ezdxf.math import Vec2
 
@@ -28,8 +28,12 @@ class DocumentTab(QWidget):
         self.ctx = CommandContext(self)
         self.manager = CommandManager(self.ctx)
         self.canvas = CadCanvas(self)
+        self.refedit = None  # RefEditSession while a block is edited in place
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        self.refedit_bar = self._make_refedit_bar()
+        lay.addWidget(self.refedit_bar)
         lay.addWidget(self.canvas)
         self._layer_cache = None
         doc.changed.connect(self.on_doc_changed)
@@ -74,6 +78,9 @@ class DocumentTab(QWidget):
     def is_locked(self, handle: str) -> bool:
         e = self.doc.entity_by_handle(handle)
         if e is None:
+            return True
+        r = self.refedit
+        if r is not None and not r.adding and not r.is_working(handle):
             return True
         lay = self._layers().get(e.dxf.layer.lower())
         return bool(lay and lay.is_locked())
@@ -136,9 +143,40 @@ class DocumentTab(QWidget):
             return
         if e.dxftype() in ("TEXT", "MTEXT", "ATTDEF"):
             self.main.edit_text(self, e)
+        elif e.dxftype() == "INSERT" and self.refedit is None:
+            self.canvas.set_selection([handle])
+            self.manager.start("REFEDIT")
         else:
             self.canvas.set_selection([handle])
             self.main.show_properties()
+
+    # ------------------------------------------------------------ in-place block editing
+    def _make_refedit_bar(self):
+        bar = QFrame()
+        bar.setObjectName("refeditBar")
+        h = QHBoxLayout(bar)
+        h.setContentsMargins(8, 3, 8, 3)
+        self.refedit_label = QLabel()
+        h.addWidget(self.refedit_label)
+        h.addStretch(1)
+        for text, cmd in (("Bloğa ekle", "REFADD"), ("Bloktan çıkar", "REFREMOVE"),
+                          ("Değişiklikleri kaydet", "REFCLOSE_SAVE"), ("Vazgeç", "REFCLOSE_DISCARD")):
+            b = QPushButton(text)
+            b.clicked.connect(lambda checked=False, c=cmd: (self.canvas.setFocus(), self.manager.start(c)))
+            h.addWidget(b)
+        bar.setFixedHeight(40)
+        bar.hide()
+        return bar
+
+    def refedit_changed(self):
+        r = self.refedit
+        if r is None:
+            self.refedit_bar.hide()
+        else:
+            self.refedit_label.setText(f"<b>Blok düzenleniyor:</b> {r.name}  —  soluk nesneler bloğa dahil değil. "
+                                       f"Çizdiğiniz yeni nesneler bloğa eklenir.")
+            self.refedit_bar.show()
+        self.canvas.invalidate()
 
     # ------------------------------------------------------------ menus
     def context_menu(self, gpos):

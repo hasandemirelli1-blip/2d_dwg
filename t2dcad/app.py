@@ -147,6 +147,8 @@ class MainWindow(QMainWindow):
             tip += f"  [{cmd}]"
         a.setToolTip(tip)
         a.setStatusTip(tip)
+        # shortcuts must work while the menu bar is hidden (ribbon mode)
+        self.addAction(a)
         self._actions[key] = a
         return a
 
@@ -1052,7 +1054,9 @@ def apply_dark_theme(app: QApplication):
         QTabWidget#ribbonTabs QTabBar::tab { padding: 4px 16px; }
         QFrame#ribbonPanel { border-right: 1px solid #454c57; }
         QLabel#ribbonPanelTitle { color: #9aa6b4; font-size: 8pt; background: #323942; }
-        QToolButton#appButton { background: #2F6299; border: none; }
+        QToolButton#appButton { background: #2F6299; color: white; border: none; padding: 2px 10px 2px 6px;
+                                font-weight: bold; }
+        QToolButton#appButton:hover { background: #3a74b2; }
         QToolButton#appButton::menu-indicator { image: none; }
         QWidget#startPage { background: #1f252d; }
         QFrame#startLeft { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #142a45, stop:1 #1e3d63); }
@@ -1061,18 +1065,35 @@ def apply_dark_theme(app: QApplication):
         QPushButton#startPrimary:hover { background: #e8813f; }
         QPushButton#startButton { background: #2F6299; color: white; border: none; border-radius: 4px; font-size: 10pt; }
         QPushButton#startButton:hover { background: #3a74b2; }
+        QFrame#refeditBar { background: #4a3b25; border-bottom: 2px solid #DC6E2D; }
+        QFrame#refeditBar QPushButton { padding: 3px 12px; }
         QFrame#recentCard { background: #2a313a; border: 1px solid #39424e; border-radius: 6px; }
         QFrame#recentCard:hover { border: 1px solid #DC6E2D; }
     """)
 
 
 class Splash(QSplashScreen):
-    def __init__(self):
+    """Start screen with an animated progress line (about 5 seconds)."""
+
+    def __init__(self, duration_ms: int):
         super().__init__(branding.splash_pixmap())
         self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+        self.duration = max(1, duration_ms)
+        self.text = ""
+        import time
+        self.t0 = time.monotonic()
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self._tick)
+        self.timer.start(60)
+
+    def _tick(self):
+        import time
+        prog = (time.monotonic() - self.t0) * 1000 / self.duration
+        self.setPixmap(branding.splash_pixmap(progress=prog, message=self.text))
 
     def message(self, text):
-        self.showMessage(text, Qt.AlignLeft | Qt.AlignBottom, QColor(200, 214, 232))
+        self.text = text
+        self._tick()
         QApplication.processEvents()
 
 
@@ -1088,21 +1109,22 @@ def main():
     app.setOrganizationName("T2D")
     app.setWindowIcon(branding.logo_icon())
     apply_dark_theme(app)
-    splash = Splash()
+    show_time = int(settings.get_float("splash_seconds", 5.0) * 1000)
+    splash = Splash(show_time)
     splash.show()
-    splash.message("   Yazı tipleri yükleniyor...")
+    splash.message("Yazı tipleri yükleniyor...")
     import time
     t0 = time.monotonic()
     from t2dcad import fonts
     fonts.setup()
-    splash.message("   Arayüz hazırlanıyor...")
+    splash.message("Arayüz hazırlanıyor...")
     w = MainWindow()
-    splash.message("   Hazır")
+    splash.message("Hazır")
     files = [a for a in sys.argv[1:] if a.lower().endswith((".dwg", ".dxf"))]
-    show_time = int(settings.get_float("splash_seconds", 5.0) * 1000)
     remaining = max(0, show_time - int((time.monotonic() - t0) * 1000))
 
     def start():
+        splash.timer.stop()
         w.show()
         splash.finish(w)
         for f in files:

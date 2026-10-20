@@ -61,7 +61,7 @@ class CadCanvas(QWidget):
         self._dwell_pt: Optional[Vec2] = None
         self._dwell = QTimer(self)
         self._dwell.setSingleShot(True)
-        self._dwell.setInterval(450)
+        self._dwell.setInterval(300)
         self._dwell.timeout.connect(self._acquire)
         self.osnap_override: Optional[set] = None
         self.selection: list[str] = []
@@ -186,8 +186,27 @@ class CadCanvas(QWidget):
         source = QRectF(x0, y0, x1 - x0, y1 - y0)
         p.translate(0, self.height())
         p.scale(1, -1)
-        self.renderer.scene.render(p, QRectF(0, 0, self.width(), self.height()), source,
-                                   Qt.IgnoreAspectRatio)
+        target = QRectF(0, 0, self.width(), self.height())
+        scene = self.renderer.scene
+        scene.render(p, target, source, Qt.IgnoreAspectRatio)
+        r = getattr(self.tab, "refedit", None)
+        if r is not None:
+            # fade everything which is not part of the edited block
+            p.resetTransform()
+            fade = QColor(self.bg_color)
+            fade.setAlpha(175)
+            p.fillRect(target, fade)
+            p.translate(0, self.height())
+            p.scale(1, -1)
+            from t2dcad.render import HANDLE_KEY
+            hidden = []
+            for it in scene.items(QRectF(source)):
+                if not r.is_working(it.data(HANDLE_KEY) or ""):
+                    it.setVisible(False)
+                    hidden.append(it)
+            scene.render(p, target, source, Qt.IgnoreAspectRatio)
+            for it in hidden:
+                it.setVisible(True)
         p.end()
         self._base = img
         self._base_dirty = False
@@ -563,8 +582,10 @@ class CadCanvas(QWidget):
             if self.snap_hit is not None:
                 self._start_dwell(self.snap_hit[1])
             else:
+                # leaving the point: hovering it again must start a new dwell
                 self._dwell.stop()
-                tracked = self._track(raw) if (self.otrack and self.acquired and not no_snap) else None
+                self._dwell_pt = None
+                tracked = self._track(raw, base) if (self.otrack and self.acquired and not no_snap) else None
                 if tracked is not None:
                     pt = tracked
                 elif base is not None and self.ortho:
@@ -601,6 +622,8 @@ class CadCanvas(QWidget):
         if self._dwell_pt is None or not self._dwell_pt.isclose(p, abs_tol=1e-9):
             self._dwell_pt = p
             self._dwell.start()
+        elif not self._dwell.isActive() and not any(a.isclose(p, abs_tol=1e-9) for a in self.acquired):
+            self._dwell.start()
 
     def _acquire(self):
         """Hovering over an osnap point for a moment acquires it (AutoCAD +)."""
@@ -611,8 +634,6 @@ class CadCanvas(QWidget):
         p = self._dwell_pt
         for a in self.acquired:
             if a.isclose(p, abs_tol=1e-9):
-                self.acquired.remove(a)  # hovering again removes it
-                self.update()
                 return
         self.acquired.append(p)
         if len(self.acquired) > 7:
@@ -637,7 +658,7 @@ class CadCanvas(QWidget):
                 a += inc
         return [Vec2.from_deg_angle(a) for a in angles]
 
-    def _track(self, raw: Vec2) -> Optional[Vec2]:
+    def _track(self, raw: Vec2, base: Optional[Vec2] = None) -> Optional[Vec2]:
         tol = self.px(7)
         cands = []
         for a in self.acquired:
@@ -666,6 +687,20 @@ class CadCanvas(QWidget):
                 pt = ip
                 lines.append((b, v))
                 break
+        # ORTHO from the base point has priority: use the crossing of the
+        # orthogonal line from the base point and the tracking line
+        if base is not None and self.ortho and len(lines) == 1:
+            d = raw - base
+            o = Vec2(1, 0) if abs(d.x) >= abs(d.y) else Vec2(0, 1)
+            den = o.x * u.y - o.y * u.x
+            if abs(den) < 1e-12:
+                return None  # parallel: plain ortho
+            w = a - base
+            t = (w.x * u.y - w.y * u.x) / den
+            pt = base + o * t
+            self.track_lines = lines
+            self.track_align = None
+            return pt
         self.track_lines = lines
         d = pt - a
         if d.magnitude > 1e-12:

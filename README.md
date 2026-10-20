@@ -97,6 +97,19 @@ noktadan o mesafede oluşur. İki izleme çizgisinin kesişimine de yakalanır.
 | Yazı | STYLE (ST): yazı stili ve yazı tipi seçimi, FONTIMPORT: yazı tipi içe aktarma |
 | Diğer | U, REDO, OSNAP (OS/DS), OPTIONS (OP), LTSCALE (LTS), PURGE (PU), COPYCLIP, PASTECLIP, HELP |
 
+### Bloklar (AutoCAD gibi yerinde düzenleme)
+* Bir bloğa **çift tıklayın** veya `REFEDIT` (`BEDIT`) yazın: blok yerinde düzenlenir, diğer her şey soluklaşır.
+* Normal komutlarla çizin/değiştirin; yeni çizdikleriniz bloğa dahil olur.
+* Üstteki şeritten **Bloğa ekle** (`REFADD`): çizimdeki bir nesneyi bloğun içine alır.
+  **Bloktan çıkar** (`REFREMOVE`): bloktaki bir nesneyi bloktan çıkarıp çizimde bırakır.
+* **Değişiklikleri kaydet** (`REFCLOSE`): bloğun tüm kopyaları güncellenir. **Vazgeç**: hiçbir şey değişmez.
+
+### Özellikler paneli (Ctrl+1)
+* Yazılarda stil, **yazı tipi**, yükseklik, dönme, genişlik faktörü, eğiklik, hizalama.
+* Ölçülerde AutoCAD'deki gruplar: Çizgiler ve oklar (ok tipleri, ok boyutu, uzatma çizgileri),
+  Yazı (yazı stili/tipi, yükseklik, renk, konum, metin geçersiz kılma), Birincil birimler
+  (**önek, sonek**, hassasiyet, ölçek faktörü, yuvarlama, ondalık ayırıcı), Sığdır (DIMSCALE).
+
 ### Yazdırma (PLOT – Ctrl+P)
 * Yazıcı listesinde Windows'a kurulu tüm yazıcılar ve **Microsoft Print to PDF** görünür.
   Ayrıca dahili **"PDF dosyası (T2D-CAD dahili)"** seçeneği vardır.

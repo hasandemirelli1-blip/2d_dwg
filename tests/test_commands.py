@@ -214,3 +214,45 @@ def test_autocomplete():
     assert words[0] == "RE"
     assert "RECTANG" in words
     assert all(w.startswith("RE") for w in words)
+
+
+def test_refedit_add_remove_save(tab):
+    run(tab, "REC", "0,0", "10,10")
+    run(tab, "L", "20,0", "30,0", "")
+    rect, line = list(tab.doc.msp)
+    blk = tab.doc.doc.blocks.new("BLK")
+    blk.add_lwpolyline([(0, 0), (10, 0), (10, 10)])
+    ins = tab.doc.msp.add_blockref("BLK", (100, 100))
+    tab.doc.added(ins)
+    tab.canvas.set_selection([ins.dxf.handle])
+    run(tab, "REFEDIT")
+    r = tab.refedit
+    assert r is not None and len(r.working_entities()) == 1
+    # draw a new circle -> belongs to the block
+    run(tab, "C", "105,105", "2")
+    # add an outside line, remove the polyline
+    r.add([line])
+    poly = [e for e in r.working_entities() if e.dxftype() == "LWPOLYLINE"][0]
+    r.remove([poly])
+    run(tab, "REFCLOSE_SAVE")
+    assert tab.refedit is None
+    content = sorted(e.dxftype() for e in tab.doc.doc.blocks.get("BLK"))
+    assert content == ["CIRCLE", "LINE"]
+    circle = [e for e in tab.doc.doc.blocks.get("BLK") if e.dxftype() == "CIRCLE"][0]
+    assert Vec2(circle.dxf.center).isclose(Vec2(5, 5))
+    # the removed polyline stays in the drawing, the moved line left the drawing
+    types = sorted(e.dxftype() for e in tab.doc.msp)
+    assert "LWPOLYLINE" in types and "INSERT" in types and types.count("LINE") == 0
+
+
+def test_refedit_discard(tab):
+    blk = tab.doc.doc.blocks.new("B2")
+    blk.add_line((0, 0), (5, 0))
+    ins = tab.doc.msp.add_blockref("B2", (0, 0))
+    tab.doc.added(ins)
+    tab.canvas.set_selection([ins.dxf.handle])
+    run(tab, "REFEDIT")
+    run(tab, "C", "0,0", "3")
+    run(tab, "REFCLOSE_DISCARD")
+    assert [e.dxftype() for e in tab.doc.doc.blocks.get("B2")] == ["LINE"]
+    assert [e.dxftype() for e in tab.doc.msp] == ["INSERT"]

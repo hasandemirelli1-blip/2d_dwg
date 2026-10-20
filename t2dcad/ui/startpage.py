@@ -69,7 +69,7 @@ class _Card(QFrame):
         if tp.exists():
             img.setPixmap(QPixmap(str(tp)).scaled(220, 150, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         else:
-            img.setPixmap(branding.logo_pixmap(90, disc=True))
+            img.setPixmap(branding.logo_pixmap(90))
             img.setStyleSheet("background:#212830;")
         v.addWidget(img)
         name = QLabel(Path(path).name)
@@ -115,8 +115,8 @@ class StartPage(QWidget):
         logo = QLabel()
         logo.setPixmap(branding.logo_pixmap(110))
         lv.addWidget(logo, 0, Qt.AlignLeft)
-        title = QLabel('<span style="color:#ffffff;font-size:30px;font-weight:900;">T2D</span>'
-                       '<span style="color:#DC6E2D;font-size:30px;font-weight:900;">-CAD</span>')
+        title = QLabel('<span style="color:#ffffff;font-size:30px;font-weight:700;">T2D</span>'
+                       '<span style="color:#DC6E2D;font-size:30px;font-weight:300;"> CAD</span>')
         lv.addWidget(title)
         sub = QLabel("2B Teknik Çizim · DWG / DXF")
         sub.setStyleSheet("color:#b9c7d8;")

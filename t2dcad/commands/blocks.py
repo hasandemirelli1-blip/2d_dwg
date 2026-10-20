@@ -208,3 +208,101 @@ def hatch(ctx):
         h.paths.add_polyline_path([(p.x, p.y, b) for p, b in vs], is_closed=True, flags=flags)
     ctx.created(h)
     ctx.set("hatch_opts", (pattern, scale, angle))
+
+
+# ---------------------------------------------------------------- in-place block editing
+from t2dcad.engine import GetEntity as _GetEntity  # noqa: E402
+
+
+@command("REFEDIT", "BEDIT", "BE", "REFE", pickfirst=True, undoable=False, repeatable=False)
+def refedit(ctx):
+    from t2dcad.refedit import RefEditSession, block_reference_at
+    tab = ctx.tab
+    if tab.refedit is not None:
+        ctx.print("Zaten bir blok düzenleniyor. Önce kaydedin veya vazgeçin.")
+        return
+    sel = ctx.take_pickfirst()
+    ins = None
+    for e in sel:
+        ins = block_reference_at(tab, e.dxf.handle)
+        if ins:
+            break
+    if ins is None:
+        r = yield _GetEntity("Düzenlenecek bloğu seçin", types=("INSERT",))
+        ins = block_reference_at(tab, r[0].dxf.handle)
+    if ins is None:
+        ctx.print("Bu blok yerinde düzenlenemez.")
+        return
+    session = RefEditSession(tab, ins)
+    problems = session.start()
+    tab.refedit = session
+    tab.refedit_changed()
+    ctx.print(f'"{session.name}" bloğu yerinde düzenleniyor. Bitince "Değişiklikleri kaydet" (REFCLOSE).')
+    for p in problems:
+        ctx.print(f"Uyarı: {p}")
+
+
+@command("REFADD", "REFSET", undoable=False)
+def refadd(ctx):
+    r = ctx.tab.refedit
+    if r is None:
+        ctx.print("Önce REFEDIT ile bir blok açın.")
+        return
+    r.adding = True
+    try:
+        ents = yield GetSelection("Bloğa eklenecek nesneleri seçin")
+    finally:
+        r.adding = False
+    n = r.add(ents)
+    ctx.canvas.invalidate()
+    ctx.print(f"{n} nesne bloğa eklendi (kaydedince bloğun içine taşınır).")
+
+
+@command("REFREMOVE", undoable=False)
+def refremove(ctx):
+    r = ctx.tab.refedit
+    if r is None:
+        ctx.print("Önce REFEDIT ile bir blok açın.")
+        return
+    ents = yield GetSelection("Bloktan çıkarılacak nesneleri seçin")
+    n = r.remove(ents)
+    ctx.canvas.invalidate()
+    ctx.print(f"{n} nesne bloktan çıkarıldı (çizimde normal nesne olarak kalır).")
+
+
+def _close(ctx, save: bool):
+    tab = ctx.tab
+    r = tab.refedit
+    if r is None:
+        ctx.print("Düzenlenen bir blok yok.")
+        return
+    if save:
+        problems = r.save()
+        for p in problems:
+            ctx.print(f"Uyarı: {p}")
+        ctx.print(f'"{r.name}" bloğu kaydedildi; tüm kopyaları güncellendi.')
+    else:
+        r.discard()
+        ctx.print("Blok değişiklikleri atıldı.")
+    tab.refedit = None
+    tab.refedit_changed()
+    tab.regen()
+
+
+@command("REFCLOSE", "BCLOSE", undoable=False, repeatable=False)
+def refclose(ctx):
+    if ctx.tab.refedit is None:
+        ctx.print("Düzenlenen bir blok yok.")
+        return
+    k = yield GetKeyword("Değişiklikler", keywords=("Save", "Discard"), default="Save")
+    _close(ctx, k != "Discard")
+
+
+@command("REFCLOSE_SAVE", undoable=False, repeatable=False)
+def refclose_save(ctx):
+    _close(ctx, True)
+
+
+@command("REFCLOSE_DISCARD", undoable=False, repeatable=False)
+def refclose_discard(ctx):
+    _close(ctx, False)

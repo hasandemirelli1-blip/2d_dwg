@@ -37,7 +37,7 @@ def entity_grips(e) -> list[tuple[Vec2, object]]:
         elif t == "POLYLINE" and e.is_2d_polyline:
             for i, v in enumerate(e.vertices):
                 out.append((Vec2(v.dxf.location), ("pv", i)))
-        elif t in ("TEXT", "MTEXT", "INSERT", "ATTDEF"):
+        elif t in ("TEXT", "MTEXT", "INSERT", "ATTDEF", "IMAGE"):
             out = [(Vec2(e.dxf.insert), "move")]
         elif t == "POINT":
             out = [(Vec2(e.dxf.location), "move")]

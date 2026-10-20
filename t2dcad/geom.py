@@ -268,6 +268,9 @@ def entity_prims(e, depth=0) -> list[Prim]:
         if t in ("SOLID", "TRACE", "3DFACE"):
             vs = [Vec2(v) for v in e.wcs_vertices()]
             return [Seg(a, b) for a, b in zip(vs, vs[1:] + vs[:1]) if not a.isclose(b)]
+        if t in ("IMAGE", "WIPEOUT"):
+            vs = [Vec2(v) for v in e.boundary_path_wcs()]
+            return [Seg(a, b) for a, b in zip(vs, vs[1:] + vs[:1]) if not a.isclose(b)]
         if t in ("INSERT", "DIMENSION", "ARC_DIMENSION", "LEADER") and depth < 4:
             out = []
             for v in e.virtual_entities():
@@ -344,6 +347,11 @@ def entity_snap_points(e, depth=0) -> list[tuple[str, Vec2]]:
                 for name in ("defpoint", "defpoint2", "defpoint3"):
                     if e.dxf.hasattr(name):
                         out.append((NOD, Vec2(e.dxf.get(name))))
+        elif t in ("IMAGE", "WIPEOUT"):
+            vs = [Vec2(v) for v in e.boundary_path_wcs()]
+            for a, b in zip(vs, vs[1:] + vs[:1]):
+                out += [(END, a), (MID, a.lerp(b))]
+            out.append((INS, Vec2(e.dxf.insert)))
         elif t == "XLINE" or t == "RAY":
             out.append((END, Vec2(e.dxf.start)))
         elif t == "HATCH":

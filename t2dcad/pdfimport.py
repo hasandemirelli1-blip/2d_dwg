@@ -31,6 +31,7 @@ class PdfImportOptions:
     colors: bool = True         # keep PDF colors (black/white -> color 7)
     layer_mode: str = "type"    # "type", "pdf" (PDF layers), "current"
     skip_white_fills: bool = True
+    images: bool = True         # raster images (saved as PNG next to the PDF)
 
 
 @dataclass
@@ -146,7 +147,7 @@ class PdfImporter:
         if mode == "pdf" and pdf_layer:
             name = "".join(ch if ch.isalnum() or ch in "-_ ." else "_" for ch in pdf_layer)[:200] or "PDF"
         else:
-            name = {"geom": "PDF_Geometri", "fill": "PDF_Dolgu", "text": "PDF_Yazi"}[kind]
+            name = {"geom": "PDF_Geometri", "fill": "PDF_Dolgu", "text": "PDF_Yazi", "image": "PDF_Resim"}[kind]
         if name not in self.doc.layers:
             self.doc.layers.add(name, color=7)
         return name
@@ -395,6 +396,66 @@ class PdfImporter:
                     t = msp.add_text(txt, dxfattribs=attribs)
                     self._add(t, "yazı")
 
+    # ------------------------------------------------------------ images
+    def _images(self, pdf, page, path):
+        import pymupdf
+        imgs = page.get_images(full=True)
+        if not imgs:
+            return
+        out_dir = None
+        done = {}
+        for info in imgs:
+            xref, smask = info[0], info[1]
+            try:
+                rects = page.get_image_rects(xref, transform=True)
+            except Exception:
+                rects = []
+            if not rects:
+                continue
+            fname = done.get(xref)
+            if fname is None:
+                try:
+                    pix = pymupdf.Pixmap(pdf, xref)
+                    if smask:
+                        try:
+                            pix = pymupdf.Pixmap(pix, pymupdf.Pixmap(pdf, smask))
+                        except Exception:
+                            pass
+                    if pix.n - pix.alpha >= 4:  # CMYK -> RGB
+                        pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+                    if pix.width < 2 or pix.height < 2:
+                        continue
+                    if out_dir is None:
+                        out_dir = _image_dir(path)
+                    fname = str(out_dir / f"sayfa{self.opts.page + 1}_resim{xref}.png")
+                    pix.save(fname)
+                    done[xref] = fname
+                except Exception as ex:
+                    self.result.warnings.append(f"Resim {xref} alınamadı: {ex}")
+                    continue
+            for rect, m in rects:
+                # unit square of the image -> page; (0,1) is the lower left corner of the picture
+                bl = self.P(pymupdf.Point(0, 1) * m)
+                br = self.P(pymupdf.Point(1, 1) * m)
+                tl = self.P(pymupdf.Point(0, 0) * m)
+                u = br - bl
+                v = tl - bl
+                if u.magnitude < 1e-9 or v.magnitude < 1e-9:
+                    continue
+                try:
+                    w_px, h_px = pix.width, pix.height
+                except Exception:
+                    from PySide6.QtGui import QImageReader
+                    sz = QImageReader(fname).size()
+                    w_px, h_px = sz.width(), sz.height()
+                idef = self.doc.add_image_def(filename=fname, size_in_pixel=(w_px, h_px))
+                attribs = {"layer": self._layer("image", None)}
+                img = self.msp.add_image(image_def=idef, insert=bl, size_in_units=(u.magnitude, v.magnitude),
+                                         rotation=math.degrees(u.angle), dxfattribs=attribs)
+                self._add(img, "resim")
+        if done:
+            self.result.warnings.append(f"Resimler şu klasöre kaydedildi: {out_dir}")
+
     # ------------------------------------------------------------ main
     def run(self, path: str, progress=None) -> ImportResult:
         """progress(fraction) may return False to cancel."""
@@ -427,12 +488,29 @@ class PdfImporter:
                             self._stroke(run, ends_meet or (close_path and i == len(runs) - 1), attribs)
             if self.opts.text:
                 self._texts(page)
-            if page.get_images():
-                self.result.warnings.append(
-                    f"Sayfada {len(page.get_images())} raster resim var; resimler içe aktarılmadı.")
+            if self.opts.images:
+                self._images(pdf, page, path)
         finally:
             pdf.close()
         return self.result
+
+
+def _image_dir(pdf_path: str):
+    import os
+    from pathlib import Path
+    p = Path(pdf_path)
+    d = p.parent / f"{p.stem}_resimler"
+    try:
+        d.mkdir(exist_ok=True)
+        test = d / ".t2d"
+        test.write_text("")
+        test.unlink()
+        return d
+    except OSError:
+        base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), ".config")
+        d = Path(base) / "T2D-CAD" / "pdf_resimleri" / p.stem
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
 
 def _pt(x, y):

@@ -6,7 +6,7 @@ import math
 from ezdxf.math import Vec2, Vec3, Matrix44
 
 from t2dcad import geom, curves
-from t2dcad.curves import Curve, CURVE_TYPES, common_attribs
+from t2dcad.curves import Curve, CURVE_TYPES, BREAK_TYPES, common_attribs
 from t2dcad.engine import (command, GetPoint, GetDistance, GetAngle, GetNumber, GetKeyword,
                            GetSelection, GetEntity, fmt)
 from t2dcad.geom import Seg, Arc
@@ -506,42 +506,110 @@ def extend(ctx):
 
 
 # ---------------------------------------------------------------- BREAK
-@command("BREAK", "BR")
+@command("BREAK", "BR", pickfirst=True)
 def break_(ctx):
-    r = yield GetEntity("Nesneyi seçin", types=CURVE_TYPES)
-    e, p1 = r
-    p2 = yield GetPoint("İkinci kesme noktasını belirtin", keywords=("First",), base=None)
+    """AutoCAD BREAK: the pick point is the first break point, the second
+    point is projected onto the object, '@' breaks at the first point,
+    [First] lets you specify the first point again."""
+    pre = [x for x in ctx.take_pickfirst() if x.dxftype() in BREAK_TYPES]
+    if len(pre) == 1:
+        e = pre[0]
+        p1 = yield GetPoint("İlk kesme noktasını belirtin")
+    else:
+        r = yield GetEntity("Nesneyi seçin", types=BREAK_TYPES)
+        e, p1 = r
+        p1 = _on_curve(e, p1)
+    ctx.last_point = p1  # '@' = same point
+    p2 = yield GetPoint("İkinci kesme noktasını belirtin", keywords=("First",))
     if p2 == "First":
         p1 = yield GetPoint("İlk kesme noktasını belirtin")
-        p2 = yield GetPoint("İkinci kesme noktasını belirtin", base=p1)
+        ctx.last_point = p1
+        p2 = yield GetPoint("İkinci kesme noktasını belirtin")
     _break_at(ctx, e, p1, p2)
 
 
 @command("BREAKATPOINT", "BRP")
 def break_at_point(ctx):
-    r = yield GetEntity("Nesneyi seçin", types=("LINE", "ARC", "LWPOLYLINE"))
+    r = yield GetEntity("Nesneyi seçin", types=BREAK_TYPES)
     e, _ = r
     p = yield GetPoint("Kesme noktasını belirtin")
     _break_at(ctx, e, p, p)
 
 
+def _on_curve(e, p: Vec2) -> Vec2:
+    if e.dxftype() == "ELLIPSE":
+        return p
+    cv = Curve(e)
+    return cv.point(cv.param(p)) if cv.n else p
+
+
+def _ellipse_param(e, p: Vec2) -> float:
+    c = Vec2(e.dxf.center)
+    major = Vec2(e.dxf.major_axis)
+    ratio = e.dxf.ratio
+    u = major.normalize()
+    v = u.orthogonal()
+    d = p - c
+    return math.atan2(d.dot(v) / max(ratio * major.magnitude, 1e-12), d.dot(u) / major.magnitude) % math.tau
+
+
+def _break_ellipse(ctx, e, p1, p2):
+    t1, t2 = _ellipse_param(e, p1), _ellipse_param(e, p2)
+    s0 = e.dxf.start_param % math.tau
+    s1 = e.dxf.end_param % math.tau
+    full = abs(abs(e.dxf.end_param - e.dxf.start_param) - math.tau) < 1e-9 or abs(s1 - s0) < 1e-12
+    attribs = common_attribs(e)
+    pieces = []
+    if full:
+        if abs(t1 - t2) < 1e-9:
+            ctx.print("Kapalı elips tek noktadan kırılamaz.")
+            return
+        pieces.append((t2, t1))  # remove CCW from t1 to t2
+    else:
+        span = (s1 - s0) % math.tau or math.tau
+        r1, r2 = sorted(((t1 - s0) % math.tau, (t2 - s0) % math.tau))
+        r1, r2 = min(r1, span), min(r2, span)
+        if r1 > 1e-9:
+            pieces.append((s0, s0 + r1))
+        if span - r2 > 1e-9:
+            pieces.append((s0 + r2, s1 if s1 > s0 + r2 else s1 + math.tau))
+    new = []
+    for a, b in pieces:
+        x = ctx.msp.add_ellipse(e.dxf.center, major_axis=e.dxf.major_axis, ratio=e.dxf.ratio,
+                                start_param=a, end_param=b, dxfattribs=attribs)
+        new.append(x)
+    for x in new:
+        ctx.doc.added(x)
+    ctx.doc.erase([e])
+
+
 def _break_at(ctx, e, p1: Vec2, p2: Vec2):
+    if e.dxftype() == "ELLIPSE":
+        _break_ellipse(ctx, e, p1, p2)
+        return
     cv = Curve(e)
     s1, s2 = cv.param(p1), cv.param(p2)
     attribs = common_attribs(e)
     new = []
     if cv.periodic:
         if abs(s1 - s2) < 1e-9:
-            ctx.print("Kapalı nesne tek noktadan kırılamaz.")
-            return
-        # remove CCW from s1 to s2 -> keep s2 .. s1(+n)
-        hi = s2 if s2 > s1 else s2 + cv.n
-        keep0, keep1 = hi, s1 + cv.n
-        if keep1 < keep0:
-            keep1 += cv.n
-        p = cv.piece(ctx.msp, keep0, keep1, attribs)
-        if p is not None:
-            new.append(p)
+            if cv.type == "LWPOLYLINE":
+                # open the closed polyline at this point
+                p = cv.piece(ctx.msp, s1, s1 + cv.n, attribs)
+                if p is not None:
+                    new.append(p)
+            else:
+                ctx.print("Çember tek noktadan kırılamaz; iki nokta belirtin.")
+                return
+        else:
+            # AutoCAD removes the part counter-clockwise from the first to the second point
+            hi = s2 if s2 > s1 else s2 + cv.n
+            keep0, keep1 = hi, s1 + cv.n
+            if keep1 < keep0:
+                keep1 += cv.n
+            p = cv.piece(ctx.msp, keep0, keep1, attribs)
+            if p is not None:
+                new.append(p)
     else:
         a, b = sorted((s1, s2))
         for s0, s1_ in ((0.0, a), (b, float(cv.n))):
@@ -1082,3 +1150,32 @@ def lengthen(ctx):
                 else:
                     c.dxf.end_angle = c.dxf.end_angle + da
             ctx.doc.modify(e, fn)
+
+
+# ---------------------------------------------------------------- ALIGN
+@command("ALIGN", "AL", pickfirst=True)
+def align(ctx):
+    """Move/rotate (and optionally scale) objects so that two source points
+    land on two destination points - e.g. to calibrate an inserted image."""
+    ents = yield GetSelection("Nesneleri seçin")
+    if not ents:
+        return
+    hs = _handles(ents)
+    s1 = yield GetPoint("Birinci kaynak noktasını belirtin")
+    d1 = yield GetPoint("Birinci hedef noktasını belirtin", base=s1)
+    s2 = yield GetPoint("İkinci kaynak noktasını belirtin", allow_none=True)
+    if s2 is None:
+        transform_entities(ctx, ents, Matrix44.translate(d1.x - s1.x, d1.y - s1.y, 0))
+        return
+    d2 = yield GetPoint("İkinci hedef noktasını belirtin", base=s2)
+    k = yield GetKeyword("Nesneler hizalama noktalarına göre ölçeklensin mi?", keywords=("Yes", "No"),
+                         default="No")
+    ang = (d2 - d1).angle - (s2 - s1).angle
+    f = 1.0
+    if k == "Yes" and s1.distance(s2) > 1e-12:
+        f = d1.distance(d2) / s1.distance(s2)
+    m = (Matrix44.translate(-s1.x, -s1.y, 0) @ Matrix44.scale(f, f, f) @ Matrix44.z_rotate(ang)
+         @ Matrix44.translate(d1.x, d1.y, 0))
+    transform_entities(ctx, ents, m)
+    if k == "Yes":
+        ctx.print(f"Ölçek faktörü: {fmt(f, 6)}")

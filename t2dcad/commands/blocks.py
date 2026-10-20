@@ -354,3 +354,65 @@ def pdfimport_cmd(ctx):
         ctx.print(wmsg)
     if res.entities:
         ctx.canvas.zoom_rect(base.x, base.y, base.x + w, base.y + h, 1.05)
+
+
+# ---------------------------------------------------------------- raster images
+IMAGE_FILTER = "Resimler (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.gif)"
+
+
+def image_size_px(path: str):
+    from PySide6.QtGui import QImageReader
+    s = QImageReader(path).size()
+    return s.width(), s.height()
+
+
+def add_image(ctx_doc, msp, path, insert, width_units, rotation=0.0, dxfattribs=None):
+    """Create IMAGEDEF + IMAGE; height follows the aspect ratio."""
+    import os
+    w, h = image_size_px(path)
+    if w <= 0 or h <= 0:
+        raise ValueError("Resim okunamadı")
+    path = os.path.abspath(path)
+    idef = None
+    for d in ctx_doc.doc.objects.query("IMAGEDEF"):
+        if os.path.normcase(d.dxf.filename) == os.path.normcase(path):
+            idef = d
+            break
+    if idef is None:
+        idef = ctx_doc.doc.add_image_def(filename=path, size_in_pixel=(w, h))
+    size = (width_units, width_units * h / w)
+    return msp.add_image(image_def=idef, insert=insert, size_in_units=size, rotation=rotation,
+                         dxfattribs=dxfattribs or {})
+
+
+@command("IMAGEATTACH", "IAT", "IMAGE", "IM", "ATTACH")
+def imageattach(ctx):
+    import math as _m
+    from ezdxf.math import Vec2 as _V
+    path = ctx.main.ask_open_file("Resim ekle", IMAGE_FILTER)
+    if not path:
+        return
+    w_px, h_px = image_size_px(path)
+    if w_px <= 0:
+        ctx.print("Resim okunamadı.")
+        return
+    aspect = h_px / w_px
+    default_w = ctx.get("image_width", 100.0)
+
+    def frame(p, width, rot=0.0):
+        u = _V.from_deg_angle(rot)
+        v = u.orthogonal()
+        a = p
+        b = p + u * width
+        c = b + v * width * aspect
+        d = p + v * width * aspect
+        return [("poly", [a, b, c, d], True), ("line", a, c), ("line", b, d)]
+    p = yield GetPoint("Yerleştirme noktasını belirtin", preview=lambda q: frame(q, default_w), rubber=False)
+    width = yield GetDistance("Genişliği belirtin (ölçek)", base=p, default=default_w,
+                              preview=lambda q: frame(p, max(p.distance(q), 1e-6)))
+    rot = yield GetAngle("Dönme açısını belirtin", base=p, default=0.0,
+                         preview=lambda q: frame(p, width, _m.degrees((q - p).angle)))
+    ctx.set("image_width", width)
+    img = add_image(ctx.doc, ctx.msp, path, p, width, rot, ctx.attribs())
+    ctx.created(img)
+    ctx.print(f"Resim eklendi: {path}  ({w_px} x {h_px} px). Hizalamak için ALIGN veya SCALE (Reference) kullanın.")

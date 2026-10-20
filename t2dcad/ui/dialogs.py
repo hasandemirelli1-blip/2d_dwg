@@ -590,7 +590,9 @@ class PdfImportDialog(QDialog):
         self.join = QCheckBox("Birleşik çizgi ve yay parçalarını polyline yap")
         self.arcs = QCheckBox("Eğrilerden yay ve daire tanı")
         self.colors = QCheckBox("PDF renklerini koru")
+        self.images = QCheckBox("Raster resimler (PNG olarak PDF'nin yanına kaydedilir)")
         for cb, key in ((self.vectors, "pdf_vectors"), (self.fills, "pdf_fills"), (self.text, "pdf_text"),
+                        (self.images, "pdf_images"),
                         (self.lw, "pdf_lw"), (self.join, "pdf_join"), (self.arcs, "pdf_arcs"),
                         (self.colors, "pdf_colors")):
             cb.setChecked(settings.get_bool(key, True))
@@ -637,8 +639,9 @@ class PdfImportDialog(QDialog):
             page=self.page.value() - 1, scale=self.scale.value(), vectors=self.vectors.isChecked(),
             fills=self.fills.isChecked(), text=self.text.isChecked(), lineweights=self.lw.isChecked(),
             join=self.join.isChecked(), arcs=self.arcs.isChecked(), colors=self.colors.isChecked(),
+            images=self.images.isChecked(),
             layer_mode=["type", "pdf", "current"][self.layers.currentIndex()])
-        for cb in (self.vectors, self.fills, self.text, self.lw, self.join, self.arcs, self.colors):
+        for cb in (self.vectors, self.fills, self.text, self.lw, self.join, self.arcs, self.colors, self.images):
             settings.set(cb.property("key"), cb.isChecked())
         settings.set("pdf_scale", self.scale.value())
         settings.set("pdf_layers", self.layers.currentIndex())

@@ -11,6 +11,7 @@ from t2dcad import geom
 from t2dcad.geom import Seg, Arc, TAU
 
 CURVE_TYPES = ("LINE", "ARC", "CIRCLE", "LWPOLYLINE")
+BREAK_TYPES = ("LINE", "ARC", "CIRCLE", "LWPOLYLINE", "POLYLINE", "ELLIPSE")
 
 
 def common_attribs(e) -> dict:
@@ -28,9 +29,10 @@ class Curve:
         self.e = e
         self.type = e.dxftype()
         self.periodic = False
-        if self.type == "LWPOLYLINE":
+        if self.type in ("LWPOLYLINE", "POLYLINE"):
+            self.type = "LWPOLYLINE"  # 2D POLYLINE pieces become LWPOLYLINEs
             self.verts = geom.lwpoly_points(e)
-            self.closed = bool(e.closed)
+            self.closed = bool(e.closed if e.dxftype() == "LWPOLYLINE" else e.is_closed)
             self.periodic = self.closed
             n = len(self.verts)
             self.prims = []
@@ -104,7 +106,7 @@ class Curve:
         if len(pts) < 2:
             return None
         a = dict(attribs)
-        for name in ("const_width", "elevation", "extrusion"):
+        for name in (("const_width", "elevation", "extrusion") if self.e.dxftype() == "LWPOLYLINE" else ()):
             if self.e.dxf.hasattr(name):
                 a[name] = self.e.dxf.get(name)
         return msp.add_lwpolyline([(p.x, p.y, b) for p, b in pts], format="xyb", dxfattribs=a)

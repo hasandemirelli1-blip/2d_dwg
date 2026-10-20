@@ -249,6 +249,19 @@ class PropertiesPanel(QWidget):
             self._edit(f, "Dönme", d.rotation, lambda x, v: x.dxf.set("rotation", v))
         elif t == "DIMENSION":
             self._build_dimension(f, e)
+        elif t == "IMAGE":
+            idef = e.image_def
+            self._ro(f, "Dosya", idef.dxf.filename if idef else "?")
+            w_px, h_px = e.dxf.image_size.x, e.dxf.image_size.y
+            u, v = Vec2(e.dxf.u_pixel), Vec2(e.dxf.v_pixel)
+            width, height = u.magnitude * w_px, v.magnitude * h_px
+            self._ro(f, "Piksel", f"{int(w_px)} x {int(h_px)}")
+            ins = Vec2(e.dxf.insert)
+            self._edit(f, "Konum X", ins.x, lambda x, val: x.dxf.set("insert", Vec3(val, x.dxf.insert.y, 0)))
+            self._edit(f, "Konum Y", ins.y, lambda x, val: x.dxf.set("insert", Vec3(x.dxf.insert.x, val, 0)))
+            self._edit(f, "Genişlik", width, lambda x, val, w0=width: _scale_image(x, val / w0 if w0 else 1))
+            self._ro(f, "Yükseklik", fmt(height))
+            self._edit(f, "Dönme", math.degrees(u.angle) % 360, _rotate_image)
         elif t == "HATCH":
             self._ro(f, "Desen", d.pattern_name)
             if not d.solid_fill:
@@ -554,6 +567,20 @@ def _num(text, default):
         return float(str(text).replace(",", "."))
     except ValueError:
         return default
+
+
+def _scale_image(x, f):
+    from ezdxf.math import Matrix44
+    ins = Vec3(x.dxf.insert)
+    x.transform(Matrix44.translate(-ins.x, -ins.y, 0) @ Matrix44.scale(f, f, f) @ Matrix44.translate(ins.x, ins.y, 0))
+
+
+def _rotate_image(x, deg):
+    from ezdxf.math import Matrix44
+    ins = Vec3(x.dxf.insert)
+    cur = Vec2(x.dxf.u_pixel).angle
+    x.transform(Matrix44.translate(-ins.x, -ins.y, 0) @ Matrix44.z_rotate(math.radians(deg) - cur)
+                @ Matrix44.translate(ins.x, ins.y, 0))
 
 
 def _set_or_discard(e, name, v, default):

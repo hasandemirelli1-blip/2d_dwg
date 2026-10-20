@@ -17,8 +17,8 @@ LAYOUT = [
                    ("S", "point")]),
         ("Değiştir", [("S", "move"), ("S", "rotate"), ("S", "trim"), ("S", "copy"), ("S", "mirror"),
                       ("S", "fillet"), ("S", "stretch"), ("S", "scale"), ("S", "array"), ("S", "erase"),
-                      ("S", "explode"), ("S", "offset"), ("S", "extend"), ("S", "break"), ("S", "join"),
-                      ("S", "chamfer")]),
+                      ("S", "explode"), ("S", "offset"), ("S", "extend"), ("S", "break"), ("S", "brp"), ("S", "join"),
+                      ("S", "chamfer"), ("S", "align")]),
         ("Açıklama", [("L", "mtext"), ("S", "text"), ("S", "dli"), ("S", "le"), ("S", "dra"), ("S", "tstyle")]),
         ("Katmanlar", [("L", "layer"), ("W", "layerbar"), ("S", "laymcur"), ("S", "layoff"), ("S", "layiso"),
                        ("S", "layon")]),
@@ -29,7 +29,7 @@ LAYOUT = [
     ]),
     ("Ekle", [
         ("Blok", [("L", "insert"), ("L", "block")]),
-        ("İçe aktar", [("L", "pdfimport")]),
+        ("İçe aktar", [("L", "pdfimport"), ("L", "imageattach")]),
         ("Yazı tipi", [("L", "fontimport"), ("S", "tstyle")]),
     ]),
     ("Açıklama", [

@@ -11,7 +11,8 @@ from typing import Iterable, Optional
 import numpy as np
 from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import QPainterPath, QColor, QPen, QPolygonF, QTransform
-from PySide6.QtWidgets import QGraphicsScene, QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem
+from PySide6.QtWidgets import (QGraphicsScene, QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem,
+                               QGraphicsPixmapItem)
 
 from ezdxf.addons.drawing.frontend import Frontend
 from ezdxf.addons.drawing.properties import RenderContext, LayoutProperties
@@ -22,6 +23,7 @@ from ezdxf.addons.drawing.pyqt import _PyQtBackend, _CosmeticPath
 from ezdxf.npshapes import to_qpainter_path
 
 HANDLE_KEY = Qt.UserRole + 10
+IMAGE_Z = -1.0e9
 MODEL_BG = "#212830"
 
 
@@ -127,6 +129,9 @@ class TrackingBackend(_PyQtBackend):
     def draw_image(self, image_data, properties) -> None:
         self._switch(properties.handle)
         super().draw_image(image_data, properties)
+        items = self.items.get(properties.handle)
+        if items:
+            items[-1].setZValue(IMAGE_Z)  # raster images stay behind the drawing
 
     def finalize(self) -> None:
         # keep the scene rect unbounded (no setSceneRect)
@@ -285,7 +290,14 @@ class EntityGeometry:
                     pts = [[p.x(), p.y()] for p in poly]
                     pts.append(pts[0])
                     polylines.append(np.array(pts))
-            else:  # points, images
+            elif isinstance(it, QGraphicsPixmapItem):
+                # image frame
+                br = it.boundingRect()
+                poly = it.mapToScene(br)
+                pts = [[p.x(), p.y()] for p in poly]
+                pts.append(pts[0])
+                polylines.append(np.array(pts))
+            else:  # points
                 c = r.center()
                 polylines.append(np.array([[c.x(), c.y()], [c.x(), c.y()]]))
         self.lines = polylines
@@ -418,6 +430,11 @@ class Renderer:
     def _make_frontend(self):
         doc = self.cad_doc.doc
         ctx = RenderContext(doc)
+        if ctx.document_dir is None:
+            # unsaved drawing: absolute image paths still work, relative ones use the home folder
+            import pathlib
+            base = self.cad_doc.path or ""
+            ctx.document_dir = pathlib.Path(base).parent if base else pathlib.Path.home()
         msp = doc.modelspace()
         ctx.set_current_layout(msp)
         props = LayoutProperties.from_layout(msp)
@@ -578,6 +595,8 @@ class Renderer:
         # new items on top
         for h in handles:
             for it in self.backend.items.get(h, []):
+                if it.zValue() == IMAGE_Z:
+                    continue
                 self._z += 1.0
                 it.setZValue(self._z)
 
@@ -603,7 +622,7 @@ class Renderer:
             if not items:
                 return None
             e = self.cad_doc.entity_by_handle(handle)
-            is_text = e is not None and e.dxftype() in ("TEXT", "MTEXT", "ATTRIB", "ATTDEF")
+            is_text = e is not None and e.dxftype() in ("TEXT", "MTEXT", "ATTRIB", "ATTDEF", "IMAGE")
             g = EntityGeometry(items, is_text)
             self._geom[handle] = g
         return g

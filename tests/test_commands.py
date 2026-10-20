@@ -284,3 +284,58 @@ def test_pdf_import(tab, tmp_path):
     assert Vec2(c.dxf.center).isclose(Vec2(300 * 25.4 / 72, (595 - 300) * 25.4 / 72), abs_tol=0.01)
     run(tab, "U")
     assert len(tab.doc.msp) == 0
+
+
+def _ent_list(tab, t):
+    return [e for e in tab.doc.msp if e.dxftype() == t]
+
+
+def test_break_autocad_behaviour(tab):
+    run(tab, "L", "0,0", "100,0", "")
+    e = list(tab.doc.msp)[0]
+    run(tab, "BR")
+    tab.manager.send((e, Vec2(30, 0)))
+    run(tab, "60,25")  # second point is projected onto the line
+    xs = sorted((round(l.dxf.start.x), round(l.dxf.end.x)) for l in _ent_list(tab, "LINE"))
+    assert xs == [(0, 30), (60, 100)]
+    # '@' = break at the pick point
+    e = [l for l in _ent_list(tab, "LINE") if l.dxf.start.x == 60][0]
+    run(tab, "BR")
+    tab.manager.send((e, Vec2(80, 0)))
+    run(tab, "@")
+    xs = sorted((round(l.dxf.start.x), round(l.dxf.end.x)) for l in _ent_list(tab, "LINE"))
+    assert xs == [(0, 30), (60, 80), (80, 100)]
+
+
+def test_break_circle_and_polyline(tab):
+    run(tab, "C", "0,0", "10")
+    c = _ent_list(tab, "CIRCLE")[0]
+    run(tab, "BR")
+    tab.manager.send((c, Vec2(10, 0)))
+    run(tab, "0,10")
+    arc = _ent_list(tab, "ARC")[0]
+    assert round(arc.dxf.start_angle) == 90 and round(arc.dxf.end_angle) % 360 == 0
+    pl = tab.doc.msp.add_polyline2d([(200, 0), (250, 0), (250, 50)])
+    tab.doc.added(pl)
+    run(tab, "BR")
+    tab.manager.send((pl, Vec2(225, 0)))
+    run(tab, "250,25")
+    assert len(_ent_list(tab, "LWPOLYLINE")) == 2
+
+
+def test_image_attach_and_align(tab, tmp_path):
+    from PySide6.QtGui import QImage, QColor
+    img = QImage(200, 100, QImage.Format_RGB32)
+    img.fill(QColor("red"))
+    path = str(tmp_path / "pic.png")
+    img.save(path)
+    tab.main.ask_open_file = lambda *a: path
+    run(tab, "IMAGEATTACH", "0,0", "50", "0")
+    im = _ent_list(tab, "IMAGE")[0]
+    assert Vec2(im.dxf.u_pixel).magnitude * 200 == pytest.approx(50)
+    # align: (50,0) -> (100,0) with scaling around (0,0)
+    tab.canvas.set_selection([im.dxf.handle])
+    run(tab, "ALIGN", "0,0", "10,10", "50,0", "110,10", "Yes")
+    im = _ent_list(tab, "IMAGE")[0]
+    assert Vec2(im.dxf.insert).isclose(Vec2(10, 10))
+    assert Vec2(im.dxf.u_pixel).magnitude * 200 == pytest.approx(100)

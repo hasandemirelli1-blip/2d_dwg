@@ -166,6 +166,7 @@ class MainWindow(QMainWindow):
         m.addAction(A("plot", "&Çizdir / Yazdır...", "PLOT", "print", "Ctrl+P"))
         m.addAction(A("pdf", "PDF olarak dışa aktar...", "EXPORTPDF"))
         m.addAction(A("pdfimport", "PDF içe aktar...", "PDFIMPORT", "open"))
+        m.addAction(A("imageattach", "Resim ekle...", "IMAGEATTACH", "insert"))
         m.addSeparator()
         m.addAction(A("close", "Çizimi kapat", None, None, "Ctrl+F4",
                       lambda: self.close_tab(self.current_tab())))
@@ -253,6 +254,7 @@ class MainWindow(QMainWindow):
             ("trim", "Buda", "TRIM", "trim"), ("extend", "Uzat", "EXTEND", "extend"),
             ("break", "Kır", "BREAK", "break"), ("brp", "Noktadan kır", "BREAKATPOINT", None),
             ("join", "Birleştir", "JOIN", "join"), ("chamfer", "Pah", "CHAMFER", "chamfer"),
+            ("align", "Hizala (Align)", "ALIGN", "move"),
             ("fillet", "Kavis (Fillet)", "FILLET", "fillet"), ("explode", "Patlat", "EXPLODE", "explode"),
             (None,) * 4, ("ed", "Yazı düzenle", "TEXTEDIT", None),
         ]:
@@ -702,6 +704,10 @@ class MainWindow(QMainWindow):
             p = url.toLocalFile()
             if p.lower().endswith((".dwg", ".dxf")):
                 self.file_open(p)
+            elif p.lower().endswith((".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff", ".gif")):
+                if self.current_tab() is None:
+                    self.file_new()
+                self.run("IMAGEATTACH")
             elif p.lower().endswith(".pdf"):
                 if self.current_tab() is None:
                     self.file_new()
@@ -866,6 +872,12 @@ class MainWindow(QMainWindow):
         if dlg.exec():
             return dlg.edit.toPlainText(), dlg.height.value(), dlg.style.currentText()
         return None, height, style
+
+    def ask_open_file(self, title, flt):
+        path, _ = QFileDialog.getOpenFileName(self, title, settings.get("last_dir", ""), flt)
+        if path:
+            settings.set("last_dir", os.path.dirname(path))
+        return path
 
     def ask_text(self, title, label, default=""):
         txt, ok = QInputDialog.getText(self, title, label, text=default)

@@ -1,0 +1,120 @@
+# T2D-CAD
+
+AutoCAD benzeri, **sadece 2B** çalışan, ücretsiz bir çizim programı (Windows).
+DWG/DXF dosyalarını açar, düzenler ve kaydeder. Komutlar, kısayollar, OSNAP, ORTHO,
+katmanlar ve yazdırma AutoCAD'deki gibi çalışır.
+
+> Kişisel kullanım içindir. Programda kullanılan tüm bileşenler ücretsizdir.
+
+---
+
+## 1. Kurulum (Windows)
+
+### A) Hazır program (önerilen)
+1. GitHub'da bu deponun **Actions** sekmesine girin → en son başarılı **"Windows build"** çalışmasını açın.
+2. Sayfanın altındaki **Artifacts** bölümünden `T2D-CAD-windows` dosyasını indirin.
+3. ZIP'i bir klasöre açın (ör. `C:\T2D-CAD`) ve **`T2D-CAD.exe`** dosyasını çalıştırın.
+   İsterseniz exe'ye sağ tıklayıp masaüstüne kısayol gönderin.
+
+### B) Kaynak koddan çalıştırma
+1. [python.org](https://www.python.org/downloads/) adresinden Python 3.12 kurun ("Add python.exe to PATH" seçili olsun).
+2. Bu klasördeki **`T2D-CAD_kaynaktan_calistir.bat`** dosyasına çift tıklayın.
+   İlk açılışta gerekli paketleri kurar (birkaç dakika), sonra her seferinde doğrudan açılır.
+
+### DWG desteği için (bir kez yapılır)
+DWG kapalı bir formattır. Bu işi ücretsiz **ODA File Converter** programı yapar:
+1. <https://www.opendesign.com/guestfiles/oda_file_converter> adresinden Windows sürümünü indirip kurun.
+2. T2D-CAD otomatik bulur. Bulamazsa **Araçlar → Seçenekler** menüsünden `ODAFileConverter.exe` yolunu gösterin.
+
+ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece DWG açma/kaydetme çalışmaz.
+
+---
+
+## 2. Kullanım – AutoCAD'deki gibi
+
+* Komutu klavyeden yazın (ekranın herhangi bir yerinde yazmaya başlamanız yeterli), **Enter** veya **Boşluk** ile çalıştırın.
+* Boş **Enter / Boşluk / sağ tık** komutu bitirir. Komut yokken son komutu tekrarlar.
+* **Esc** komutu iptal eder ve seçimi temizler.
+* **Fare tekerleği** imlecin olduğu yere doğru yakınlaştırır. **Orta tuşla sürüklemek** kaydırır.
+  **Orta tuşa çift tık** = Zoom Kapsam.
+
+### Koordinat girişi
+| Yazım | Anlamı |
+|---|---|
+| `100,50` | mutlak nokta |
+| `@100,50` | son noktaya göre |
+| `@100<30` | son noktadan 100 birim, 30° |
+| `250` | imleç yönünde 250 birim (doğrudan mesafe; ORTHO ile çok pratik) |
+| `END`, `MID`, `CEN`, `INT`, `PER`, `TAN`, `NEA`, `QUA`, `NOD`, `INS` | tek seferlik nesne yakalama (Shift + sağ tık menüsü de var) |
+
+### Kısayol tuşları
+| Tuş | İşlev | Tuş | İşlev |
+|---|---|---|---|
+| F1 | Yardım | Ctrl+N / O / S | Yeni / Aç / Kaydet |
+| F2 | Komut geçmişi penceresi | Ctrl+Shift+S | Farklı kaydet |
+| F3 | OSNAP aç/kapa | Ctrl+P | Çizdir (yazıcı / PDF) |
+| F7 | Izgara | Ctrl+Z / Ctrl+Y | Geri al / Yinele |
+| F8 | ORTHO | Ctrl+C / X / V | Pano: kopyala / kes / yapıştır |
+| F9 | SNAP (ızgaraya yakalama) | Ctrl+Shift+C | Temel noktayla kopyala |
+| F10 | Kutupsal izleme (POLAR) | Ctrl+A | Tümünü seç |
+| Ctrl+1 | Özellikler paneli | Delete | Seçileni sil |
+| Ctrl+9 | Komut satırını gizle/göster | Ctrl+F4 | Çizimi kapat |
+
+### Seçim
+* Nesneye tıklama → seçer. **Shift + tıklama** → seçimden çıkarır.
+* Boş alana tıklayıp **soldan sağa** çekmek: *Pencere* (tamamı içinde kalanlar, mavi).
+  **Sağdan sola**: *Kesişen* (değen her şey, yeşil).
+* Seçim isterken `ALL`, `L` (son), `P` (önceki), `R` (çıkar), `A` (ekle) yazılabilir.
+* Seçili nesnelerin **mavi tutamaçlarına (grip)** tıklayıp nesneyi gerdirebilir/taşıyabilirsiniz.
+* Önce seçip sonra komut vermek (ör. seç → `M`) desteklenir.
+
+### Komutlar
+| Grup | Komutlar (kısaltma) |
+|---|---|
+| Çizim | LINE (L), PLINE (PL), CIRCLE (C), ARC (A), RECTANG (REC), POLYGON (POL), ELLIPSE (EL), POINT (PO), XLINE (XL), RAY, DONUT (DO), TEXT (DT), MTEXT (T/MT), HATCH (H), BLOCK (B), INSERT (I) |
+| Değiştirme | ERASE (E), MOVE (M), COPY (CO/CP), ROTATE (RO), SCALE (SC), MIRROR (MI), OFFSET (O), TRIM (TR), EXTEND (EX), FILLET (F), CHAMFER (CHA), BREAK (BR), BREAKATPOINT (BRP), JOIN (J), EXPLODE (X), STRETCH (S), ARRAY (AR), LENGTHEN (LEN), MATCHPROP (MA), TEXTEDIT (ED), PROPERTIES (PR / Ctrl+1) |
+| Ölçülendirme | DIMLINEAR (DLI), DIMALIGNED (DAL), DIMANGULAR (DAN), DIMRADIUS (DRA), DIMDIAMETER (DDI), DIMCONTINUE (DCO), DIMBASELINE (DBA), QLEADER (LE), DIMSTYLE (D) |
+| Görünüm | ZOOM (Z: E/W/P/A/C/S), ZE, ZW, ZP, PAN (P), REGEN (RE) |
+| Sorgulama | DIST (DI), AREA (AA), ID, LIST (LI) |
+| Katman | LAYER (LA), LAYOFF, LAYON, LAYFRZ, LAYTHW, LAYLCK, LAYULK, LAYISO, LAYUNISO, LAYMCUR, LAYMCH |
+| Dosya | NEW, OPEN, QSAVE, SAVEAS, PLOT (Ctrl+P), EXPORTPDF, CLOSE, QUIT |
+| Diğer | U, REDO, OSNAP (OS/DS), OPTIONS (OP), LTSCALE (LTS), PURGE (PU), COPYCLIP, PASTECLIP, HELP |
+
+### Yazdırma (PLOT – Ctrl+P)
+* Yazıcı listesinde Windows'a kurulu tüm yazıcılar ve **Microsoft Print to PDF** görünür.
+  Ayrıca dahili **"PDF dosyası (T2D-CAD dahili)"** seçeneği vardır.
+* Kağıt boyutu (A4–A0, Letter...), yatay/dikey, alan (**Kapsam / Ekran / Pencere**), ölçek
+  (**Kağıda sığdır** veya 1:1, 1:50, 1:100 ... çizim birimi mm kabul edilir), ortalama.
+* Çizim stili: **Monokrom (siyah)**, Renkli veya Gri tonlama. Çizgi kalınlıkları basılabilir.
+* **Önizleme** düğmesiyle kağıt üzerinde nasıl çıkacağını görebilirsiniz.
+* Katman yöneticisinde "Çizdir" işareti kaldırılan katmanlar basılmaz (Defpoints hiç basılmaz).
+
+---
+
+## 3. Bilinen sınırlamalar (sürüm 0.1)
+
+* Sadece **Model** alanı açılıp düzenlenir. Dosyadaki *Layout* (kağıt alanı) sayfaları korunur
+  ve kaydedilir, ama görüntülenmez/düzenlenmez. Yazdırma model alanından yapılır.
+* Nesne izleme (OTRACK, F11) ve dinamik giriş kutuları (DYN, F12) henüz yok;
+  koordinatlar komut satırına yazılır, imleç yanında uzunluk/açı gösterilir.
+* FILLET/CHAMFER: çizgiler ve 2B çoklu çizgiler (Polyline seçeneği) destekleniyor.
+* OFFSET: çizgi, yay, çember, 2B çoklu çizgi. Elips/spline ofseti yok.
+* SHX fontları yerine benzer TrueType fontlar kullanılır (görünüm biraz farklı olabilir,
+  dosyadaki yazı bilgisi değişmez).
+* DWG için ODA File Converter gerekir (ücretsiz).
+
+---
+
+## 4. Geliştirici notları
+
+* Python 3.10+, [PySide6](https://doc.qt.io/qtforpython-6/) (Qt arayüzü),
+  [ezdxf](https://ezdxf.readthedocs.io/) (DXF okuma/yazma ve çizim motoru).
+* Klasörler:
+  * `t2dcad/engine.py` – komut motoru (komutlar `yield GetPoint(...)` ile kullanıcıdan girdi ister)
+  * `t2dcad/commands/` – tüm komutlar (çizim, değiştirme, ölçü, blok/tarama, dosya/görünüm/katman)
+  * `t2dcad/canvas.py` – çizim alanı (zoom/pan, imleç, OSNAP/ORTHO/POLAR, seçim, grip)
+  * `t2dcad/render.py` – ezdxf ile çizim; `t2dcad/snap.py` – nesne yakalama
+  * `t2dcad/docmodel.py` – dosya açma/kaydetme (DXF/DWG) ve geri al/yinele
+  * `t2dcad/ui/` – komut satırı, katman yöneticisi, özellikler paneli, yazdırma, diyaloglar
+* Testler: `QT_QPA_PLATFORM=offscreen python -m pytest tests`
+* Windows exe: `pyinstaller T2D-CAD.spec` (GitHub Actions bunu her push'ta otomatik yapar).

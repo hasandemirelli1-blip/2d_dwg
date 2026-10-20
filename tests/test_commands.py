@@ -177,3 +177,40 @@ def test_snap_endpoint(tab):
     run(tab, "L", "0,0", "100,0", "")
     hit = tab.snap.find(Vec2(99.5, 0.3), 2.0)
     assert hit is not None and hit[0] == "end" and hit[1].isclose(Vec2(100, 0))
+
+
+def test_from_reference_point(tab):
+    run(tab, "L", "FROM", "100,100", "@10,5", "@20,0", "")
+    e = list(tab.doc.msp)[0]
+    assert Vec2(e.dxf.start).isclose(Vec2(110, 105))
+    assert Vec2(e.dxf.end).isclose(Vec2(130, 105))
+
+
+def test_m2p(tab):
+    run(tab, "L", "M2P", "0,0", "100,50", "0,0", "")
+    e = list(tab.doc.msp)[0]
+    assert Vec2(e.dxf.start).isclose(Vec2(50, 25))
+
+
+def test_object_snap_tracking(tab):
+    c = tab.canvas
+    c.otrack = True
+    run(tab, "L")
+    c.acquired = [Vec2(100, 0)]
+    # cursor nearly on the vertical through (100, 0)
+    p = c._track(Vec2(100.0 + c.px(2), 40))
+    assert p is not None and p.isclose(Vec2(100, 40))
+    # typed distance goes along the tracking line from the acquired point
+    c.cursor_world = p
+    run(tab, "25")
+    run(tab, "@10,0", "")
+    e = list(tab.doc.msp)[0]
+    assert Vec2(e.dxf.start).isclose(Vec2(100, 25))
+
+
+def test_autocomplete():
+    from t2dcad.ui.cmdline import suggestions
+    words = [w for w, c in suggestions("RE")]
+    assert words[0] == "RE"
+    assert "RECTANG" in words
+    assert all(w.startswith("RE") for w in words)

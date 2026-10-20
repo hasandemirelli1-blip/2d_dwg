@@ -21,12 +21,12 @@ katmanlar ve yazdırma AutoCAD'deki gibi çalışır.
 2. Bu klasördeki **`T2D-CAD_kaynaktan_calistir.bat`** dosyasına çift tıklayın.
    İlk açılışta gerekli paketleri kurar (birkaç dakika), sonra her seferinde doğrudan açılır.
 
-### DWG desteği için (bir kez yapılır)
-DWG kapalı bir formattır. Bu işi ücretsiz **ODA File Converter** programı yapar:
-1. <https://www.opendesign.com/guestfiles/oda_file_converter> adresinden Windows sürümünü indirip kurun.
-2. T2D-CAD otomatik bulur. Bulamazsa **Araçlar → Seçenekler** menüsünden `ODAFileConverter.exe` yolunu gösterin.
-
-ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece DWG açma/kaydetme çalışmaz.
+### DWG desteği
+DWG kapalı bir formattır; bu işi ücretsiz **ODA File Converter** yapar.
+* GitHub'dan indirilen hazır pakette ODA File Converter **zaten içinde** (`oda` klasörü) gelir, ayrıca bir şey kurmanız gerekmez.
+* Paket içinde yoksa ilk DWG açılışında T2D-CAD bunu **otomatik indirip kurmayı** önerir
+  (Başlangıç sayfasında ve Araçlar menüsünde "DWG desteğini kur" düğmesi de vardır).
+* ODA File Converter'ı Open Design Alliance ücretsiz dağıtır; ticari olmayan kullanım içindir.
 
 ---
 
@@ -38,6 +38,13 @@ ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece
 * **Fare tekerleği** imlecin olduğu yere doğru yakınlaştırır. **Orta tuşla sürüklemek** kaydırır.
   **Orta tuşa çift tık** = Zoom Kapsam.
 
+### Arayüz
+* **Şerit (Ribbon)** veya **Klasik menü**: Görünüm menüsünden, durum çubuğundaki ☰ düğmesinden ya da
+  `RIBBON` / `MENUBAR` komutlarıyla seçilir. Seçim hatırlanır.
+* **Başlangıç sayfası**: son açılan çizimler küçük resimleriyle listelenir (sağ tık → listeden kaldır).
+* **Otomatik tamamlama**: komut yazmaya başlayınca (ör. `R`, `RE`) AutoCAD'deki gibi öneri listesi açılır.
+  ↑/↓ ile seçin, Enter/Boşluk ile çalıştırın.
+
 ### Koordinat girişi
 | Yazım | Anlamı |
 |---|---|
@@ -46,6 +53,14 @@ ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece
 | `@100<30` | son noktadan 100 birim, 30° |
 | `250` | imleç yönünde 250 birim (doğrudan mesafe; ORTHO ile çok pratik) |
 | `END`, `MID`, `CEN`, `INT`, `PER`, `TAN`, `NEA`, `QUA`, `NOD`, `INS` | tek seferlik nesne yakalama (Shift + sağ tık menüsü de var) |
+| `FROM` | referans noktasından ofset: önce referans noktayı tıklayın, sonra `@10,5` yazın |
+| `M2P` | iki noktanın ortası |
+
+### Nesne yakalama izleme (OTRACK, F11)
+Nokta isterken imleci bir yakalama noktasının (uç, orta, merkez...) üzerinde kısa süre bekletin:
+küçük turuncu **+** işareti çıkar (nokta "alındı"). Sonra imleci yatay/dikey (KUTUPSAL açıksa onun açılarında)
+hizalayınca yeşil kesikli izleme çizgisi görünür. Bu durumda sadece bir sayı yazarsanız nokta, alınan
+noktadan o mesafede oluşur. İki izleme çizgisinin kesişimine de yakalanır.
 
 ### Kısayol tuşları
 | Tuş | İşlev | Tuş | İşlev |
@@ -57,6 +72,7 @@ ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece
 | F8 | ORTHO | Ctrl+C / X / V | Pano: kopyala / kes / yapıştır |
 | F9 | SNAP (ızgaraya yakalama) | Ctrl+Shift+C | Temel noktayla kopyala |
 | F10 | Kutupsal izleme (POLAR) | Ctrl+A | Tümünü seç |
+| F11 | Nesne yakalama izleme (OTRACK) | | |
 | Ctrl+1 | Özellikler paneli | Delete | Seçileni sil |
 | Ctrl+9 | Komut satırını gizle/göster | Ctrl+F4 | Çizimi kapat |
 
@@ -78,6 +94,7 @@ ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece
 | Sorgulama | DIST (DI), AREA (AA), ID, LIST (LI) |
 | Katman | LAYER (LA), LAYOFF, LAYON, LAYFRZ, LAYTHW, LAYLCK, LAYULK, LAYISO, LAYUNISO, LAYMCUR, LAYMCH |
 | Dosya | NEW, OPEN, QSAVE, SAVEAS, PLOT (Ctrl+P), EXPORTPDF, CLOSE, QUIT |
+| Yazı | STYLE (ST): yazı stili ve yazı tipi seçimi, FONTIMPORT: yazı tipi içe aktarma |
 | Diğer | U, REDO, OSNAP (OS/DS), OPTIONS (OP), LTSCALE (LTS), PURGE (PU), COPYCLIP, PASTECLIP, HELP |
 
 ### Yazdırma (PLOT – Ctrl+P)
@@ -95,13 +112,13 @@ ODA kurulu değilse DXF dosyaları yine sorunsuz açılır ve kaydedilir; sadece
 
 * Sadece **Model** alanı açılıp düzenlenir. Dosyadaki *Layout* (kağıt alanı) sayfaları korunur
   ve kaydedilir, ama görüntülenmez/düzenlenmez. Yazdırma model alanından yapılır.
-* Nesne izleme (OTRACK, F11) ve dinamik giriş kutuları (DYN, F12) henüz yok;
-  koordinatlar komut satırına yazılır, imleç yanında uzunluk/açı gösterilir.
+* Dinamik giriş kutuları (DYN, F12) yok; koordinatlar komut satırına yazılır,
+  imleç yanında uzunluk/açı gösterilir.
 * FILLET/CHAMFER: çizgiler ve 2B çoklu çizgiler (Polyline seçeneği) destekleniyor.
 * OFFSET: çizgi, yay, çember, 2B çoklu çizgi. Elips/spline ofseti yok.
-* SHX fontları yerine benzer TrueType fontlar kullanılır (görünüm biraz farklı olabilir,
-  dosyadaki yazı bilgisi değişmez).
-* DWG için ODA File Converter gerekir (ücretsiz).
+* Yazı tipleri: AutoCAD SHX fontlarının benzerleri (txt, simplex, romans, isocp, italic...) programla gelir
+  (LibreCAD çizgi fontları, Türkçe karakterler eklendi). Bilgisayarda AutoCAD kuruluysa gerçek SHX
+  fontları otomatik kullanılır. Windows TrueType fontları ve içe aktarılan fontlar da seçilebilir.
 
 ---
 

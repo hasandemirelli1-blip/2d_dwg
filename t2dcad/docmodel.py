@@ -30,11 +30,19 @@ class FileError(Exception):
     pass
 
 
+class OdaMissing(FileError):
+    pass
+
+
 # ---------------------------------------------------------------- ODA converter
 def find_oda_converter() -> str:
     """Return path of ODAFileConverter.exe (settings or auto detected) or ''."""
     p = settings.get("oda_path", "")
     if p and os.path.isfile(p):
+        return p
+    from t2dcad.odainstall import find_bundled
+    p = find_bundled()
+    if p:
         return p
     patterns = [
         r"C:\Program Files\ODA\ODAFileConverter*\ODAFileConverter.exe",
@@ -52,7 +60,7 @@ def find_oda_converter() -> str:
 def _configure_odafc() -> None:
     path = find_oda_converter()
     if not path:
-        raise FileError(
+        raise OdaMissing(
             "DWG dosyaları için ücretsiz 'ODA File Converter' programı gerekli.\n\n"
             "1) https://www.opendesign.com/guestfiles/oda_file_converter adresinden "
             "Windows sürümünü indirip kurun.\n"

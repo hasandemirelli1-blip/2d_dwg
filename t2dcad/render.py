@@ -36,6 +36,10 @@ class TrackingBackend(_PyQtBackend):
         # keep the scene rect unbounded (no setSceneRect)
         pass
 
+    def set_background(self, color) -> None:
+        # the canvas paints the background (and the grid below the entities)
+        self._scene.setBackgroundBrush(Qt.NoBrush)
+
     def clear(self) -> None:
         self._scene.clear()
         self.items.clear()

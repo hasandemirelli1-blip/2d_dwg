@@ -521,3 +521,33 @@ def purge(ctx):
     ctx.doc.layers_changed.emit()
     ctx.doc.set_modified(True)
     ctx.print(f"{removed} kullanılmayan katman temizlendi.")
+
+
+@command("STYLE", "ST", "DDSTYLE", undoable=False, repeatable=False)
+def style(ctx):
+    ctx.main.text_style_dialog()
+
+
+@command("FONTIMPORT", undoable=False, repeatable=False)
+def fontimport(ctx):
+    ctx.main.import_font()
+
+
+@command("RIBBON", undoable=False, transparent=True)
+def ribbon(ctx):
+    ctx.main.set_ui_mode("ribbon")
+
+
+@command("MENUBAR", "CLASSIC", undoable=False, transparent=True)
+def menubar(ctx):
+    ctx.main.set_ui_mode("classic")
+
+
+@command("STARTPAGE", "HOME", undoable=False, transparent=True)
+def startpage(ctx):
+    ctx.main.show_start_page()
+
+
+@command("OTRACK", undoable=False, transparent=True)
+def otrack(ctx):
+    ctx.main.toggle("otrack")

@@ -157,7 +157,7 @@ class OptionsDialog(QDialog):
 
 
 class MTextDialog(QDialog):
-    def __init__(self, text: str, height: float, parent=None):
+    def __init__(self, text: str, height: float, parent=None, styles=None, style=None):
         super().__init__(parent)
         self.setWindowTitle("Çok Satırlı Yazı")
         self.resize(520, 300)
@@ -168,6 +168,11 @@ class MTextDialog(QDialog):
         self.height.setDecimals(3)
         self.height.setValue(height)
         f.addRow("Yazı yüksekliği:", self.height)
+        self.style = QComboBox()
+        self.style.addItems(styles or ["Standard"])
+        if style:
+            self.style.setCurrentText(style)
+        f.addRow("Yazı stili:", self.style)
         v.addLayout(f)
         self.edit = QPlainTextEdit(text)
         v.addWidget(self.edit, 1)
@@ -304,6 +309,9 @@ class DimStyleDialog(QDialog):
         self.dec = QSpinBox()
         self.dec.setRange(0, 8)
         f.addRow("Ondalık basamak:", self.dec)
+        self.txsty = QComboBox()
+        self.txsty.addItems([st.dxf.name for st in self.doc.styles if st.dxf.name])
+        f.addRow("Yazı stili:", self.txsty)
         self.arrow = QComboBox()
         self.arrow.addItems(["Kapalı dolu (varsayılan)", "ARCHTICK (mimari çentik)", "OBLIQUE (eğik)",
                              "DOT (nokta)", "OPEN (açık)"])
@@ -322,6 +330,7 @@ class DimStyleDialog(QDialog):
         for key, label, default in self.FIELDS:
             self.spins[key].setValue(float(ds.dxf.get(key, default) or default))
         self.dec.setValue(int(ds.dxf.get("dimdec", 2)))
+        self.txsty.setCurrentText(ds.dxf.get("dimtxsty", "Standard") or "Standard")
         blk = (ds.dxf.get("dimblk", "") or "").upper()
         idx = {"": 0, "ARCHTICK": 1, "OBLIQUE": 2, "DOT": 3, "OPEN": 4}.get(blk, 0)
         self.arrow.setCurrentIndex(idx)
@@ -332,6 +341,7 @@ class DimStyleDialog(QDialog):
         for key, label, default in self.FIELDS:
             ds.dxf.set(key, self.spins[key].value())
         ds.dxf.dimdec = self.dec.value()
+        ds.dxf.dimtxsty = self.txsty.currentText() or "Standard"
         arrow = ["", "ARCHTICK", "OBLIQUE", "DOT", "OPEN"][self.arrow.currentIndex()]
         try:
             ds.set_arrows(blk=arrow)
@@ -375,3 +385,165 @@ orta tuşa çift tık = Zoom Kapsam</td></tr>
 sağdan sola: <b>Kesişen</b> (değenler). Shift+tıklama seçimden çıkarır. Seçim isterken ALL, L (son), P (önceki)
 yazılabilir. Seçili nesnelerin mavi tutamaçlarına (grip) tıklayıp gerdirebilirsiniz.</p>
 """
+
+
+class TextStyleDialog(QDialog):
+    """STYLE: text styles with an AutoCAD like font library and font import."""
+
+    def __init__(self, main, tab, parent=None):
+        super().__init__(parent)
+        self.main = main
+        self.tab = tab
+        self.doc = tab.doc.doc
+        self.setWindowTitle("Yazı Stili")
+        self.resize(560, 360)
+        from t2dcad import fonts
+        self.fonts = fonts
+        v = QVBoxLayout(self)
+        top = QHBoxLayout()
+        self.list = QListWidget()
+        self.list.setMaximumWidth(180)
+        top.addWidget(self.list)
+        right = QFormLayout()
+        self.font = QComboBox()
+        self.font.setEditable(True)
+        self.font.setMaxVisibleItems(25)
+        right.addRow("Yazı tipi:", self.font)
+        self.height = QDoubleSpinBox()
+        self.height.setRange(0, 100000)
+        self.height.setDecimals(3)
+        right.addRow("Yükseklik (0 = değişken):", self.height)
+        self.width = QDoubleSpinBox()
+        self.width.setRange(0.01, 100)
+        self.width.setDecimals(3)
+        right.addRow("Genişlik faktörü:", self.width)
+        self.oblique = QDoubleSpinBox()
+        self.oblique.setRange(-85, 85)
+        right.addRow("Eğiklik açısı:", self.oblique)
+        self.preview = QLabel("AaBbÇçĞğİıÖöŞşÜü 0123")
+        self.preview.setMinimumHeight(40)
+        right.addRow("Önizleme:", self.preview)
+        top.addLayout(right, 1)
+        v.addLayout(top)
+        row = QHBoxLayout()
+        b_new = QPushButton("Yeni...")
+        b_cur = QPushButton("Geçerli yap")
+        b_imp = QPushButton("Yazı tipi içe aktar...")
+        b_apply = QPushButton("Uygula")
+        for b in (b_new, b_cur, b_imp, b_apply):
+            row.addWidget(b)
+        v.addLayout(row)
+        b_new.clicked.connect(self._new)
+        b_cur.clicked.connect(self._make_current)
+        b_imp.clicked.connect(self._import)
+        b_apply.clicked.connect(self._apply)
+        bb = QDialogButtonBox(QDialogButtonBox.Close)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+        self.list.currentTextChanged.connect(self._load)
+        self.font.currentTextChanged.connect(self._preview)
+        self._fill_fonts()
+        self._fill(self.doc.header.get("$TEXTSTYLE", "Standard"))
+
+    def _fill_fonts(self, select=None):
+        cad, ttf = self.fonts.font_list()
+        self.font.blockSignals(True)
+        self.font.clear()
+        for f in cad:
+            self.font.addItem(f"{f}", f)
+        self.font.insertSeparator(self.font.count())
+        for f in ttf:
+            self.font.addItem(f, f)
+        self.font.blockSignals(False)
+        if select:
+            self.font.setCurrentText(select)
+
+    def _fill(self, select=None):
+        self.list.clear()
+        names = [s.dxf.name for s in self.doc.styles if s.dxf.name]
+        self.list.addItems(names)
+        cur = self.doc.header.get("$TEXTSTYLE", "Standard")
+        for i in range(self.list.count()):
+            if self.list.item(i).text() == cur:
+                self.list.item(i).setText(cur)
+                f = self.list.item(i).font()
+                f.setBold(True)
+                self.list.item(i).setFont(f)
+        items = self.list.findItems(select or cur, Qt.MatchExactly)
+        if items:
+            self.list.setCurrentItem(items[0])
+
+    def _style(self):
+        it = self.list.currentItem()
+        return self.doc.styles.get(it.text()) if it else None
+
+    def _load(self, name):
+        st = self.doc.styles.get(name) if name else None
+        if st is None:
+            return
+        font = st.dxf.get("font", "txt") or "txt"
+        if "." not in font:
+            font += ".shx"
+        self.font.setCurrentText(font)
+        self.height.setValue(st.dxf.get("height", 0.0))
+        self.width.setValue(st.dxf.get("width", 1.0) or 1.0)
+        self.oblique.setValue(st.dxf.get("oblique", 0.0))
+        self._preview(font)
+
+    def _preview(self, font):
+        from PySide6.QtGui import QFont
+        name = font.lower()
+        if name.endswith((".ttf", ".otf", ".ttc")):
+            f = QFont(font.rsplit(".", 1)[0])
+        else:
+            f = QFont("Consolas")
+        f.setPointSize(14)
+        self.preview.setFont(f)
+
+    def _apply(self):
+        st = self._style()
+        if st is None:
+            return
+        old = (st.dxf.get("font", "txt"), st.dxf.get("height", 0.0), st.dxf.get("width", 1.0),
+               st.dxf.get("oblique", 0.0))
+        new = (self.font.currentText().strip() or "txt.shx", self.height.value(), self.width.value(),
+               self.oblique.value())
+
+        def set_(vals):
+            st.dxf.font, st.dxf.height, st.dxf.width, st.dxf.oblique = vals
+        set_(new)
+        self.tab.doc.custom(lambda: set_(old), lambda: set_(new))
+
+    def _new(self):
+        from PySide6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "Yeni yazı stili", "Stil adı:", text="Stil1")
+        if not ok or not name.strip():
+            return
+        name = name.strip()
+        if name in self.doc.styles:
+            QMessageBox.warning(self, "Yazı stili", "Bu adda bir stil zaten var.")
+            return
+        self.doc.styles.add(name, font=self.font.currentText() or "txt.shx")
+        self.tab.doc.set_modified(True)
+        self._fill(name)
+
+    def _make_current(self):
+        st = self._style()
+        if st is not None:
+            self.doc.header["$TEXTSTYLE"] = st.dxf.name
+            self._fill(st.dxf.name)
+
+    def _import(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Yazı tipi seçin", "",
+                                              "Yazı tipleri (*.ttf *.otf *.ttc *.shx *.lff)")
+        if not path:
+            return
+        try:
+            name = self.fonts.import_font(path)
+        except Exception as ex:
+            QMessageBox.critical(self, "Yazı tipi", f"İçe aktarılamadı:\n{ex}")
+            return
+        if name.lower().endswith(".lff"):
+            name = name[:-4] + ".shx"
+        self._fill_fonts(name)
+        QMessageBox.information(self, "Yazı tipi", f'"{name}" yazı tipi eklendi.')

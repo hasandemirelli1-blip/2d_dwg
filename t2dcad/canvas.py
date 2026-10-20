@@ -53,6 +53,16 @@ class CadCanvas(QWidget):
         self.cursor_world = Vec2()  # snapped/constrained
         self.snap_hit: Optional[tuple[str, Vec2]] = None
         self.track_info: Optional[tuple] = None  # (base, angle_deg) polar tracking
+        # object snap tracking (OTRACK)
+        self.otrack = settings.get_bool("otrack", True)
+        self.acquired: list[Vec2] = []
+        self.track_lines: list[tuple] = []  # (origin, unit direction)
+        self.track_align: Optional[tuple] = None  # (origin, unit dir) for direct distance
+        self._dwell_pt: Optional[Vec2] = None
+        self._dwell = QTimer(self)
+        self._dwell.setSingleShot(True)
+        self._dwell.setInterval(450)
+        self._dwell.timeout.connect(self._acquire)
         self.osnap_override: Optional[set] = None
         self.selection: list[str] = []
         self.prev_selection: list[str] = []
@@ -189,8 +199,8 @@ class CadCanvas(QWidget):
         while g * self.scale < 8:
             g *= 5
         x0, y0, x1, y1 = self.visible_rect()
-        minor = QPen(QColor(255, 255, 255, 18))
-        major = QPen(QColor(255, 255, 255, 40))
+        minor = QPen(QColor(255, 255, 255, 26))
+        major = QPen(QColor(255, 255, 255, 60))
         i0 = math.floor(x0 / g)
         i1 = math.ceil(x1 / g)
         for i in range(i0, i1 + 1):
@@ -463,7 +473,21 @@ class CadCanvas(QWidget):
             p.drawRect(QRectF(x - s, y - s, 2 * s, 2 * s))
 
     def _paint_tracking(self, p: QPainter):
-        if not self.track_info or self._cursor_mode() != "point":
+        if self._cursor_mode() != "point":
+            return
+        # acquired points and tracking lines
+        p.setPen(QPen(QColor(255, 150, 60), 1.5))
+        for a in self.acquired:
+            c = self.to_screen(a)
+            p.drawLine(c + QPointF(-4, 0), c + QPointF(4, 0))
+            p.drawLine(c + QPointF(0, -4), c + QPointF(0, 4))
+        if self.track_lines:
+            pen = QPen(TRACK_COLOR, 1, Qt.DotLine)
+            p.setPen(pen)
+            big = 3e6 / max(self.scale, 1e-9)
+            for a, u in self.track_lines:
+                p.drawLine(self.to_screen(a - u * big), self.to_screen(a + u * big))
+        if not self.track_info:
             return
         base, ang = self.track_info
         a = self.to_screen(base)
@@ -479,6 +503,10 @@ class CadCanvas(QWidget):
         if mode == "point":
             if self.snap_hit:
                 lines.append(geom.SNAP_NAMES.get(self.snap_hit[0], self.snap_hit[0]))
+            elif self.track_align:
+                a, u = self.track_align
+                dd = self.cursor_world.distance(a)
+                lines.append(f"Nesne izleme: {fmt(dd, 3)} < {fmt(math.degrees(u.angle) % 360, 2)}°")
             base = self.manager.rubber_base
             if base is not None:
                 d = self.cursor_world - base
@@ -530,8 +558,16 @@ class CadCanvas(QWidget):
                 if hit:
                     self.snap_hit = hit
                     pt = hit[1]
-            if self.snap_hit is None:
-                if base is not None and self.ortho:
+            self.track_lines = []
+            self.track_align = None
+            if self.snap_hit is not None:
+                self._start_dwell(self.snap_hit[1])
+            else:
+                self._dwell.stop()
+                tracked = self._track(raw) if (self.otrack and self.acquired and not no_snap) else None
+                if tracked is not None:
+                    pt = tracked
+                elif base is not None and self.ortho:
                     d = raw - base
                     pt = base + (Vec2(d.x, 0) if abs(d.x) >= abs(d.y) else Vec2(0, d.y))
                 elif base is not None and self.polar:
@@ -557,6 +593,84 @@ class CadCanvas(QWidget):
             self.hover = None
         self.cursor_moved.emit(pt.x, pt.y)
         self.update()
+
+    # ------------------------------------------------------------ object snap tracking
+    def _start_dwell(self, p: Vec2):
+        if not self.otrack:
+            return
+        if self._dwell_pt is None or not self._dwell_pt.isclose(p, abs_tol=1e-9):
+            self._dwell_pt = p
+            self._dwell.start()
+
+    def _acquire(self):
+        """Hovering over an osnap point for a moment acquires it (AutoCAD +)."""
+        if self._dwell_pt is None or self.snap_hit is None:
+            return
+        if not self.snap_hit[1].isclose(self._dwell_pt, abs_tol=1e-9):
+            return
+        p = self._dwell_pt
+        for a in self.acquired:
+            if a.isclose(p, abs_tol=1e-9):
+                self.acquired.remove(a)  # hovering again removes it
+                self.update()
+                return
+        self.acquired.append(p)
+        if len(self.acquired) > 7:
+            self.acquired.pop(0)
+        self.update()
+
+    def clear_tracking(self):
+        self.acquired = []
+        self.track_lines = []
+        self.track_align = None
+        self._dwell_pt = None
+        self._dwell.stop()
+
+    def _track_dirs(self) -> list[Vec2]:
+        angles = [0.0, 90.0]
+        if self.polar:
+            inc = self.polar_inc or 45.0
+            a = inc
+            while a < 180.0 - 1e-9:
+                if a not in angles:
+                    angles.append(a)
+                a += inc
+        return [Vec2.from_deg_angle(a) for a in angles]
+
+    def _track(self, raw: Vec2) -> Optional[Vec2]:
+        tol = self.px(7)
+        cands = []
+        for a in self.acquired:
+            for u in self._track_dirs():
+                d = raw - a
+                dist = abs(u.x * d.y - u.y * d.x)
+                if dist <= tol:
+                    cands.append((dist, a, u))
+        if not cands:
+            return None
+        cands.sort(key=lambda c: c[0])
+        _, a, u = cands[0]
+        pt = a + u * (raw - a).dot(u)
+        lines = [(a, u)]
+        # intersection of two tracking lines
+        for _, b, v in cands[1:]:
+            if b.isclose(a) and abs(abs(u.dot(v)) - 1) < 1e-9:
+                continue
+            den = u.x * v.y - u.y * v.x
+            if abs(den) < 1e-12:
+                continue
+            w = b - a
+            t = (w.x * v.y - w.y * v.x) / den
+            ip = a + u * t
+            if ip.distance(raw) <= tol * 1.5:
+                pt = ip
+                lines.append((b, v))
+                break
+        self.track_lines = lines
+        d = pt - a
+        if d.magnitude > 1e-12:
+            self.track_align = (a, d.normalize())
+        return pt
 
     def constrained_direction(self, base: Vec2) -> Optional[Vec2]:
         d = self.cursor_world - base
@@ -690,6 +804,7 @@ class CadCanvas(QWidget):
         if mode == "point":
             pt = self.cursor_world
             self.osnap_override = None
+            self.clear_tracking()
             self.manager.point_input(pt)
             self.update_cursor(pos)
             return

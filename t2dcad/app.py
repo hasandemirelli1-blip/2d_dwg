@@ -11,20 +11,23 @@ from PySide6.QtCore import Qt, QTimer, QSize
 from PySide6.QtGui import QAction, QKeySequence, QPalette, QColor, QIcon, QShortcut
 from PySide6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QDockWidget, QToolBar, QLabel,
                                QStatusBar, QToolButton, QFileDialog, QMessageBox, QComboBox, QInputDialog,
-                               QWidget, QDialog, QVBoxLayout, QTextBrowser, QDialogButtonBox, QStyleFactory)
+                               QWidget, QDialog, QVBoxLayout, QTextBrowser, QDialogButtonBox, QStyleFactory,
+                               QTabBar, QProgressDialog, QSplashScreen)
 
 from ezdxf.math import Vec2
 
 from t2dcad import APP_NAME, __version__, settings
 from t2dcad import commands  # noqa: F401  (registers commands)
-from t2dcad.docmodel import CadDocument, FileError, DWG_VERSIONS
+from t2dcad.docmodel import CadDocument, FileError, OdaMissing, DWG_VERSIONS
 from t2dcad.doctab import DocumentTab
 from t2dcad.engine import fmt
 from t2dcad.snap import DEFAULT_MODES
 from t2dcad.ui.cmdline import CommandLine
-from t2dcad.ui.icons import icon, app_icon, color_icon
+from t2dcad.ui import branding
+from t2dcad.ui.icons import icon
 from t2dcad.ui.properties import PropertiesPanel
-from t2dcad.ui.widgets import ColorCombo, LinetypeCombo, LineweightCombo, aci_qcolor
+from t2dcad.ui.propbar import PropertyBar
+from t2dcad.ui.startpage import StartPage, save_thumbnail
 
 FILE_FILTER = "Çizimler (*.dwg *.dxf);;AutoCAD Çizimi (*.dwg);;DXF (*.dxf);;Tüm dosyalar (*)"
 SAVE_FILTERS = {
@@ -37,7 +40,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.setWindowIcon(app_icon())
+        self.setWindowIcon(branding.logo_icon())
         self.resize(1400, 900)
         self.setAcceptDrops(True)
         self.clipboard = None
@@ -48,12 +51,14 @@ class MainWindow(QMainWindow):
             self.osnap_modes = set(DEFAULT_MODES)
         self.osnap_on = settings.get_bool("osnap", True)
         self._untitled = 0
+        self.prop_bars: list[PropertyBar] = []
+        self.classic_toolbars: list[QToolBar] = []
 
         self.tabs = QTabWidget()
         self.tabs.setTabsClosable(True)
         self.tabs.setMovable(True)
         self.tabs.setDocumentMode(True)
-        self.tabs.tabCloseRequested.connect(lambda i: self.close_tab(self.tabs.widget(i)))
+        self.tabs.tabCloseRequested.connect(self._tab_close_requested)
         self.tabs.currentChanged.connect(self._tab_changed)
         self.setCentralWidget(self.tabs)
 
@@ -76,8 +81,13 @@ class MainWindow(QMainWindow):
 
         self._actions = {}
         self._build_menus_and_toolbars()
+        self._build_ribbon()
         self._build_statusbar()
         self._build_shortcuts()
+        self.start_page = StartPage(self)
+        self.tabs.addTab(self.start_page, branding.logo_icon(), "Başlangıç")
+        self.tabs.tabBar().setTabButton(0, QTabBar.RightSide, None)
+        self.tabs.tabBar().setTabButton(0, QTabBar.LeftSide, None)
 
         self.autosave_timer = QTimer(self)
         self.autosave_timer.timeout.connect(self.autosave)
@@ -95,6 +105,7 @@ class MainWindow(QMainWindow):
                 self.restoreState(state)
             except Exception:
                 pass
+        self.set_ui_mode(settings.get("ui_mode", "ribbon"), quiet=True)
         self.cmdline.add_history(f"{APP_NAME} {__version__} - AutoCAD benzeri 2B çizim. Yardım için F1.")
 
     # ------------------------------------------------------------ helpers
@@ -178,7 +189,25 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(self.props_dock.toggleViewAction())
         m.addAction(self.cmd_dock.toggleViewAction())
+        m.addAction(A("startpage", "Başlangıç sayfası", None, None, None, self.show_start_page))
+        m.addSeparator()
+        m.addAction(A("ribbonmode", "Şerit menü (Ribbon)", None, None, None, lambda: self.set_ui_mode("ribbon")))
+        m.addAction(A("classic", "Klasik menü", None, None, None, lambda: self.set_ui_mode("classic")))
+        A("cmdtoggle", "Komut satırı", None, None, None,
+          lambda: self.cmd_dock.setVisible(not self.cmd_dock.isVisible()))
         self.view_menu = m
+
+        m = mb.addMenu("&Biçim")
+        m.addAction(A("layer", "Katman yöneticisi...", "LAYER", "layer"))
+        m.addAction(A("tstyle", "Yazı stili...", "STYLE", "text"))
+        m.addAction(A("dst", "Ölçü stili...", "DIMSTYLE", "dimlinear"))
+        m.addAction(A("lts", "Çizgi tipi ölçeği", "LTSCALE"))
+        m.addSeparator()
+        m.addAction(A("fontimport", "Yazı tipi içe aktar...", None, "text", None, self.import_font))
+        A("laymcur", "Katmanı geçerli yap", "LAYMCUR", "layer")
+        A("layoff", "Katmanı kapat", "LAYOFF")
+        A("layon", "Tüm katmanları aç", "LAYON")
+        A("layiso", "Katmanı yalıt", "LAYISO")
 
         m = mb.addMenu("Çi&z")
         for key, text, cmd, ic in [
@@ -203,7 +232,6 @@ class MainWindow(QMainWindow):
             ("dan", "Açısal", "DIMANGULAR", "dimangular"), ("dra", "Yarıçap", "DIMRADIUS", "dimradius"),
             ("ddi", "Çap", "DIMDIAMETER", "dimradius"), ("dco", "Devam ettir", "DIMCONTINUE", None),
             ("dba", "Taban çizgisi", "DIMBASELINE", None), ("le", "Kılavuz (Leader)", "QLEADER", "leader"),
-            (None,) * 4, ("dst", "Ölçü stili...", "DIMSTYLE", None),
         ]:
             if key is None:
                 m.addSeparator()
@@ -233,7 +261,6 @@ class MainWindow(QMainWindow):
                 m.addAction(A(key, text, cmd, ic))
 
         m = mb.addMenu("&Araçlar")
-        m.addAction(A("layer", "Katman yöneticisi...", "LAYER", "layer"))
         m.addAction(A("osnapset", "Nesne yakalama ayarları...", "OSNAP"))
         m.addAction(A("dist", "Uzaklık ölç", "DIST", "dist"))
         m.addAction(A("area", "Alan ölç", "AREA"))
@@ -241,6 +268,8 @@ class MainWindow(QMainWindow):
         m.addAction(A("id", "Nokta koordinatı", "ID"))
         m.addSeparator()
         m.addAction(A("purge", "Temizle (Purge)", "PURGE"))
+        m.addAction(A("dwgsupport", "DWG desteğini kur / güncelle...", None, None, None,
+                      self.install_dwg_support))
         m.addAction(A("options", "Seçenekler...", "OPTIONS"))
 
         m = mb.addMenu("&Yardım")
@@ -260,6 +289,7 @@ class MainWindow(QMainWindow):
             if vertical:
                 t.setOrientation(Qt.Vertical)
             self.addToolBar(area, t)
+            self.classic_toolbars.append(t)
             return t
 
         tb("Standart", ["new", "open", "save", "plot", "|", "undo", "redo", "|", "pan", "ze", "zw", "zp",
@@ -278,33 +308,46 @@ class MainWindow(QMainWindow):
         t.setObjectName("Katmanlar")
         t.setIconSize(QSize(22, 22))
         t.addAction(self._actions["layer"])
-        self.layer_combo = QComboBox()
-        self.layer_combo.setMinimumWidth(220)
-        self.layer_combo.setToolTip("Geçerli katman")
-        self.layer_combo.activated.connect(self._layer_combo_changed)
-        t.addWidget(self.layer_combo)
-        a = QAction(icon("layer"), "Nesnenin katmanını geçerli yap", self)
-        a.triggered.connect(lambda: self.run("LAYMCUR"))
-        t.addAction(a)
+        bar = PropertyBar(self, layer=True, props=False)
+        self.prop_bars.append(bar)
+        t.addWidget(bar)
+        t.addAction(self._actions["laymcur"])
         self.addToolBar(Qt.TopToolBarArea, t)
+        self.classic_toolbars.append(t)
         t2 = QToolBar("Özellikler", self)
         t2.setObjectName("OzelliklerTB")
-        self.color_combo = ColorCombo()
-        self.color_combo.setMinimumWidth(130)
-        self.color_combo.setToolTip("Renk")
-        self.color_combo.changed.connect(lambda v: self._prop_combo("color", v))
-        self.lt_combo = QComboBox()
-        self.lt_combo.setMinimumWidth(140)
-        self.lt_combo.setToolTip("Çizgi tipi")
-        self.lt_combo.activated.connect(lambda i: self._prop_combo("linetype", self.lt_combo.currentData()))
-        self.lw_combo = LineweightCombo()
-        self.lw_combo.setMinimumWidth(120)
-        self.lw_combo.setToolTip("Çizgi kalınlığı")
-        self.lw_combo.changed.connect(lambda v: self._prop_combo("lineweight", v))
-        t2.addWidget(self.color_combo)
-        t2.addWidget(self.lt_combo)
-        t2.addWidget(self.lw_combo)
+        bar2 = PropertyBar(self, layer=False, props=True)
+        self.prop_bars.append(bar2)
+        t2.addWidget(bar2)
         self.addToolBar(Qt.TopToolBarArea, t2)
+        self.classic_toolbars.append(t2)
+
+    def _build_ribbon(self):
+        from t2dcad.ui.ribbon import Ribbon
+        self.ribbon = Ribbon(self)
+        self.prop_bars.extend(self.ribbon.prop_bars)
+        t = QToolBar("Şerit", self)
+        t.setObjectName("RibbonBar")
+        t.setMovable(False)
+        t.setFloatable(False)
+        t.addWidget(self.ribbon)
+        first = self.classic_toolbars[0]
+        self.insertToolBar(first, t)
+        self.insertToolBarBreak(first)
+        self.ribbon_bar = t
+        self._fill_recent()
+
+    def set_ui_mode(self, mode: str, quiet=False):
+        """'ribbon' (AutoCAD şerit) or 'classic' (menü + araç çubukları)."""
+        mode = "classic" if mode == "classic" else "ribbon"
+        settings.set("ui_mode", mode)
+        ribbon = mode == "ribbon"
+        self.ribbon_bar.setVisible(ribbon)
+        self.menuBar().setVisible(not ribbon)
+        for t in self.classic_toolbars:
+            t.setVisible(not ribbon)
+        if not quiet:
+            self.cmdline.add_history("<Şerit menü>" if ribbon else "<Klasik menü>")
 
     def _build_statusbar(self):
         sb = QStatusBar()
@@ -316,6 +359,8 @@ class MainWindow(QMainWindow):
         for key, text, tip in [("grid", "IZGARA", "Izgara (F7)"), ("snapmode", "SNAP", "Adım yakalama (F9)"),
                                ("ortho", "ORTHO", "Dik mod (F8)"), ("polar", "KUTUPSAL", "Kutupsal izleme (F10)"),
                                ("osnap", "OSNAP", "Nesne yakalama (F3) - sağ tık: ayarlar"),
+                               ("otrack", "İZLEME", "Nesne yakalama izleme (F11): bir yakalama noktasının "
+                                                    "üzerinde bekleyin, sonra yatay/dikey hizalayın"),
                                ("lwt", "KALINLIK", "Çizgi kalınlığını göster")]:
             b = QToolButton()
             b.setText(text)
@@ -330,11 +375,18 @@ class MainWindow(QMainWindow):
             self.toggle_buttons[key] = b
         self.model_label = QLabel(" MODEL ")
         sb.addPermanentWidget(self.model_label)
+        ui_btn = QToolButton()
+        ui_btn.setText("☰")
+        ui_btn.setToolTip("Şerit / klasik menü arasında geçiş")
+        ui_btn.setAutoRaise(True)
+        ui_btn.clicked.connect(lambda: self.set_ui_mode(
+            "classic" if settings.get("ui_mode", "ribbon") == "ribbon" else "ribbon"))
+        sb.addPermanentWidget(ui_btn)
         self._sync_toggles()
 
     def _build_shortcuts(self):
         for key, name in (("F3", "osnap"), ("F7", "grid"), ("F8", "ortho"), ("F9", "snapmode"),
-                          ("F10", "polar"), ("F12", None)):
+                          ("F10", "polar"), ("F11", "otrack"), ("F12", None)):
             if name is None:
                 continue
             sc = QShortcut(QKeySequence(key), self)
@@ -375,7 +427,11 @@ class MainWindow(QMainWindow):
             settings.set(key, new)
             if key in ("ortho", "polar"):
                 settings.set("polar" if key == "ortho" else "ortho", False)
-            names = {"grid": "Izgara", "snapmode": "Snap", "ortho": "Ortho", "polar": "Kutupsal"}
+            if key == "otrack" and not new:
+                for t in self._tabs():
+                    t.canvas.clear_tracking()
+            names = {"grid": "Izgara", "snapmode": "Snap", "ortho": "Ortho", "polar": "Kutupsal",
+                     "otrack": "Nesne izleme"}
             self.cmdline.add_history(f"<{names[key]} {'açık' if new else 'kapalı'}>")
         self._sync_toggles()
 
@@ -387,13 +443,14 @@ class MainWindow(QMainWindow):
             "snapmode": tab.canvas.snap_grid if tab else settings.get_bool("snapmode"),
             "ortho": tab.canvas.ortho if tab else settings.get_bool("ortho"),
             "polar": tab.canvas.polar if tab else settings.get_bool("polar"),
+            "otrack": tab.canvas.otrack if tab else settings.get_bool("otrack", True),
         }
         for k, b in self.toggle_buttons.items():
             b.blockSignals(True)
             b.setChecked(bool(vals[k]))
             b.blockSignals(False)
-            b.setStyleSheet("QToolButton{color:#7fb8ff;font-weight:bold;}" if vals[k] else
-                            "QToolButton{color:#888;}")
+            b.setStyleSheet("QToolButton{color:#ffffff;background:#2F6299;font-weight:bold;border-radius:3px;}"
+                            if vals[k] else "QToolButton{color:#8a929c;}")
 
     def _tabs(self):
         return [self.tabs.widget(i) for i in range(self.tabs.count())
@@ -461,6 +518,11 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             doc = CadDocument.open(path)
+        except OdaMissing:
+            QApplication.restoreOverrideCursor()
+            if self.install_dwg_support(ask=True):
+                return self.file_open(path)
+            return
         except FileError as ex:
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, "Açma hatası", str(ex))
@@ -480,6 +542,7 @@ class MainWindow(QMainWindow):
         finally:
             QApplication.restoreOverrideCursor()
         self._add_recent(path)
+        QTimer.singleShot(300, lambda t=self.current_tab(): save_thumbnail(t) if t else None)
         self.cmdline.add_history(f'"{path}" açıldı ({len(doc.msp)} nesne, {doc.doc.acad_release}).')
 
     def file_save(self, tab=None) -> bool:
@@ -522,6 +585,11 @@ class MainWindow(QMainWindow):
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
             tab.doc.save(path, version)
+        except OdaMissing:
+            QApplication.restoreOverrideCursor()
+            if self.install_dwg_support(ask=True):
+                return self._save(tab, path, version)
+            return False
         except FileError as ex:
             QApplication.restoreOverrideCursor()
             QMessageBox.critical(self, "Kaydetme hatası", str(ex))
@@ -533,6 +601,7 @@ class MainWindow(QMainWindow):
             return False
         QApplication.restoreOverrideCursor()
         self.update_tab_title(tab)
+        save_thumbnail(tab)
         self.cmdline.add_history(f'Kaydedildi: "{path}" ({DWG_VERSIONS.get(version, version)})')
         return True
 
@@ -547,6 +616,15 @@ class MainWindow(QMainWindow):
             return self.file_save(tab)
         return True
 
+    def _tab_close_requested(self, i):
+        w = self.tabs.widget(i)
+        if isinstance(w, DocumentTab):
+            self.close_tab(w)
+
+    def show_start_page(self):
+        self.start_page.refresh()
+        self.tabs.setCurrentWidget(self.start_page)
+
     def close_tab(self, tab):
         if tab is None:
             return
@@ -554,10 +632,10 @@ class MainWindow(QMainWindow):
             tab.manager.cancel(quiet=True)
         if not self.maybe_save(tab):
             return
+        save_thumbnail(tab)
         self.tabs.removeTab(self.tabs.indexOf(tab))
-        if self.clipboard and self.clipboard[0] is tab:
-            pass
         tab.deleteLater()
+        self.start_page.refresh()
         self._tab_changed(self.tabs.currentIndex())
 
     def closeEvent(self, ev):
@@ -578,12 +656,18 @@ class MainWindow(QMainWindow):
         self._fill_recent()
 
     def _fill_recent(self):
-        self.recent_menu.clear()
-        for p in settings.get_list("recent"):
-            a = self.recent_menu.addAction(p)
-            a.triggered.connect(lambda checked=False, p=p: self.file_open(p))
-        if not settings.get_list("recent"):
-            self.recent_menu.addAction("(boş)").setEnabled(False)
+        menus = [self.recent_menu]
+        if getattr(self, "ribbon", None) is not None:
+            menus.append(self.ribbon.recent_menu)
+        for menu in menus:
+            menu.clear()
+            for p in settings.get_list("recent"):
+                a = menu.addAction(p)
+                a.triggered.connect(lambda checked=False, p=p: self.file_open(p))
+            if not settings.get_list("recent"):
+                menu.addAction("(boş)").setEnabled(False)
+        if getattr(self, "start_page", None) is not None:
+            self.start_page.refresh()
 
     # ------------------------------------------------------------ autosave
     def _restart_autosave(self):
@@ -622,33 +706,14 @@ class MainWindow(QMainWindow):
 
     def refresh_layer_combo(self):
         tab = self.current_tab()
-        cb = self.layer_combo
-        cb.blockSignals(True)
-        cb.clear()
-        self.lt_combo.clear()
-        if tab is None:
-            cb.blockSignals(False)
-            return
-        dxf = tab.doc.doc
-        for l in sorted(dxf.layers, key=lambda l: (l.dxf.name != "0", l.dxf.name.lower())):
-            state = ("" if l.is_on() else " (kapalı)") + (" (donuk)" if l.is_frozen() else "") + \
-                    (" (kilitli)" if l.is_locked() else "")
-            cb.addItem(color_icon(aci_qcolor(abs(l.dxf.color))), l.dxf.name + state, l.dxf.name)
-        i = cb.findData(tab.doc.current_layer)
-        cb.setCurrentIndex(max(0, i))
-        cb.blockSignals(False)
-        self.lt_combo.addItem("KatmanaGöre", "BYLAYER")
-        self.lt_combo.addItem("BlokaGöre", "BYBLOCK")
-        for lt in dxf.linetypes:
-            if lt.dxf.name.upper() not in ("BYLAYER", "BYBLOCK"):
-                self.lt_combo.addItem(lt.dxf.name, lt.dxf.name)
+        for bar in self.prop_bars:
+            bar.refresh(tab)
         self._sync_prop_combos()
 
-    def _layer_combo_changed(self, i):
+    def layer_combo_changed(self, name):
         tab = self.current_tab()
-        if tab is None:
+        if tab is None or name is None:
             return
-        name = self.layer_combo.itemData(i)
         if tab.canvas.selection:
             ents = tab.ctx.entities(tab.canvas.selection)
             tab.doc.begin("LAYER CHANGE")
@@ -664,7 +729,7 @@ class MainWindow(QMainWindow):
         tab.canvas.setFocus()
         self.refresh_layer_combo()
 
-    def _prop_combo(self, what, value):
+    def prop_combo(self, what, value):
         tab = self.current_tab()
         if tab is None:
             return
@@ -696,26 +761,13 @@ class MainWindow(QMainWindow):
         h = tab.doc.doc.header
         if ents:
             e = ents[0]
-            color = e.dxf.get("color", 256)
-            lt = e.dxf.get("linetype", "BYLAYER")
-            lw = e.dxf.get("lineweight", -1)
-            layer = e.dxf.layer
+            vals = (e.dxf.layer, e.dxf.get("color", 256), e.dxf.get("linetype", "BYLAYER"),
+                    e.dxf.get("lineweight", -1))
         else:
-            color = h.get("$CECOLOR", 256)
-            lt = h.get("$CELTYPE", "BYLAYER")
-            lw = h.get("$CELWEIGHT", -1)
-            layer = tab.doc.current_layer
-        self.color_combo.set_value(color)
-        self.lw_combo.set_value(lw)
-        for k in range(self.lt_combo.count()):
-            if str(self.lt_combo.itemData(k)).upper() == str(lt).upper():
-                self.lt_combo.setCurrentIndex(k)
-                break
-        i = self.layer_combo.findData(layer)
-        if i >= 0:
-            self.layer_combo.blockSignals(True)
-            self.layer_combo.setCurrentIndex(i)
-            self.layer_combo.blockSignals(False)
+            vals = (tab.doc.current_layer, h.get("$CECOLOR", 256), h.get("$CELTYPE", "BYLAYER"),
+                    h.get("$CELWEIGHT", -1))
+        for bar in self.prop_bars:
+            bar.show_values(*vals)
 
     def on_selection_changed(self):
         tab = self.current_tab()
@@ -784,11 +836,12 @@ class MainWindow(QMainWindow):
     def edit_text(self, tab, e):
         t = e.dxftype()
         if t == "MTEXT":
-            content, h = self.ask_mtext(e.text.replace("\\P", "\n"), e.dxf.char_height)
+            content, h, st = self.ask_mtext(e.text.replace("\\P", "\n"), e.dxf.char_height,
+                                            e.dxf.get("style", "Standard"))
             if content is None:
                 return
             tab.doc.modify(e, lambda c: (setattr(c, "text", content.replace("\n", "\\P")),
-                                         c.dxf.set("char_height", h)))
+                                         c.dxf.set("char_height", h), c.dxf.set("style", st)))
         else:
             old = e.dxf.text if t != "ATTDEF" else e.dxf.tag
             txt, ok = QInputDialog.getText(self, "Yazıyı düzenle", "Yazı:", text=old)
@@ -796,12 +849,16 @@ class MainWindow(QMainWindow):
                 tab.doc.modify(e, lambda c: c.dxf.set("text" if t != "ATTDEF" else "tag", txt))
         tab.canvas.clear_selection()
 
-    def ask_mtext(self, text, height):
+    def ask_mtext(self, text, height, style=None):
+        """Returns (content, height, style name) or (None, height, style)."""
         from t2dcad.ui.dialogs import MTextDialog
-        dlg = MTextDialog(text, height, self)
+        tab = self.current_tab()
+        styles = [st.dxf.name for st in tab.doc.doc.styles if st.dxf.name] if tab else None
+        style = style or (tab.doc.doc.header.get("$TEXTSTYLE", "Standard") if tab else None)
+        dlg = MTextDialog(text, height, self, styles, style)
         if dlg.exec():
-            return dlg.edit.toPlainText(), dlg.height.value()
-        return None, height
+            return dlg.edit.toPlainText(), dlg.height.value(), dlg.style.currentText()
+        return None, height, style
 
     def ask_text(self, title, label, default=""):
         txt, ok = QInputDialog.getText(self, title, label, text=default)
@@ -849,6 +906,69 @@ class MainWindow(QMainWindow):
                           f"<b>{APP_NAME} {__version__}</b><br>AutoCAD benzeri 2B çizim programı.<br><br>"
                           "DXF: ezdxf kütüphanesi · DWG: ODA File Converter (ücretsiz)<br>"
                           "Arayüz: Qt (PySide6)")
+
+    def text_style_dialog(self):
+        tab = self.current_tab()
+        if tab is None:
+            return
+        from t2dcad.ui.dialogs import TextStyleDialog
+        TextStyleDialog(self, tab, self).exec()
+        tab.regen()
+
+    def import_font(self):
+        from t2dcad import fonts
+        path, _ = QFileDialog.getOpenFileName(self, "Yazı tipi içe aktar", "",
+                                              "Yazı tipleri (*.ttf *.otf *.ttc *.shx *.lff)")
+        if not path:
+            return
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            name = fonts.import_font(path)
+        except Exception as ex:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.critical(self, "Yazı tipi", f"İçe aktarılamadı:\n{ex}")
+            return
+        QApplication.restoreOverrideCursor()
+        for t in self._tabs():
+            t.regen()
+        self.cmdline.add_history(f'Yazı tipi eklendi: {name}  (STYLE komutu ile bir yazı stiline atayın)')
+
+    def install_dwg_support(self, ask=False) -> bool:
+        """Download and set up the free ODA File Converter automatically."""
+        from t2dcad import odainstall
+        if ask:
+            r = QMessageBox.question(
+                self, "DWG desteği",
+                "DWG dosyaları için ücretsiz ODA File Converter gerekiyor.\n\n"
+                "Şimdi resmi siteden (opendesign.com) otomatik indirilip kurulsun mu?\n"
+                "(İnternet bağlantısı gerekir, yaklaşık 30-50 MB.)")
+            if r != QMessageBox.Yes:
+                return False
+        dlg = QProgressDialog("Hazırlanıyor...", None, 0, 100, self)
+        dlg.setWindowTitle("DWG desteği kuruluyor")
+        dlg.setMinimumDuration(0)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.show()
+
+        def progress(msg, pct):
+            dlg.setLabelText(msg)
+            dlg.setValue(pct)
+            QApplication.processEvents()
+        try:
+            exe = odainstall.install(progress)
+        except Exception as ex:
+            dlg.close()
+            QMessageBox.warning(
+                self, "DWG desteği",
+                f"Otomatik kurulum başarısız oldu:\n{ex}\n\n"
+                "Elle kurulum: https://www.opendesign.com/guestfiles/oda_file_converter adresinden "
+                "Windows sürümünü indirip kurun, T2D-CAD otomatik bulacaktır.")
+            return False
+        dlg.close()
+        settings.set("oda_path", exe)
+        self.start_page.refresh()
+        self.cmdline.add_history(f"DWG desteği kuruldu: {exe}")
+        return True
 
     # ------------------------------------------------------------ clipboard / import
     def set_clipboard(self, tab, ents, base: Vec2):
@@ -902,32 +1022,58 @@ class MainWindow(QMainWindow):
 def apply_dark_theme(app: QApplication):
     app.setStyle(QStyleFactory.create("Fusion"))
     pal = QPalette()
-    base = QColor(43, 48, 56)
-    alt = QColor(52, 58, 67)
-    text = QColor(225, 228, 232)
+    base = QColor(40, 45, 53)
+    alt = QColor(50, 56, 66)
+    text = QColor(228, 231, 235)
     pal.setColor(QPalette.Window, base)
     pal.setColor(QPalette.WindowText, text)
-    pal.setColor(QPalette.Base, QColor(33, 37, 43))
+    pal.setColor(QPalette.Base, QColor(31, 35, 41))
     pal.setColor(QPalette.AlternateBase, alt)
-    pal.setColor(QPalette.ToolTipBase, QColor(60, 66, 76))
+    pal.setColor(QPalette.ToolTipBase, QColor(58, 64, 74))
     pal.setColor(QPalette.ToolTipText, text)
     pal.setColor(QPalette.Text, text)
     pal.setColor(QPalette.Button, alt)
     pal.setColor(QPalette.ButtonText, text)
     pal.setColor(QPalette.BrightText, QColor(255, 80, 80))
-    pal.setColor(QPalette.Highlight, QColor(42, 110, 200))
+    pal.setColor(QPalette.Highlight, QColor(47, 98, 153))
     pal.setColor(QPalette.HighlightedText, QColor(255, 255, 255))
-    pal.setColor(QPalette.Link, QColor(110, 170, 255))
+    pal.setColor(QPalette.Link, QColor(240, 140, 80))
     pal.setColor(QPalette.Disabled, QPalette.Text, QColor(120, 120, 120))
     pal.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(120, 120, 120))
     pal.setColor(QPalette.PlaceholderText, QColor(130, 135, 140))
     app.setPalette(pal)
     app.setStyleSheet("""
         QToolBar { spacing: 2px; border: none; }
+        QToolBar#RibbonBar { padding: 0px; background: #2b3139; border-bottom: 2px solid #DC6E2D; }
         QDockWidget::title { padding: 3px; background: #343a43; }
         QTabBar::tab { padding: 5px 14px; }
+        QTabBar::tab:selected { border-bottom: 2px solid #DC6E2D; }
         QStatusBar QToolButton { padding: 1px 6px; }
+        QTabWidget#ribbonTabs QTabBar::tab { padding: 4px 16px; }
+        QFrame#ribbonPanel { border-right: 1px solid #454c57; }
+        QLabel#ribbonPanelTitle { color: #9aa6b4; font-size: 8pt; background: #323942; }
+        QToolButton#appButton { background: #2F6299; border: none; }
+        QToolButton#appButton::menu-indicator { image: none; }
+        QWidget#startPage { background: #1f252d; }
+        QFrame#startLeft { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 #142a45, stop:1 #1e3d63); }
+        QPushButton#startPrimary { background: #DC6E2D; color: white; border: none; border-radius: 4px;
+                                   font-weight: bold; font-size: 11pt; }
+        QPushButton#startPrimary:hover { background: #e8813f; }
+        QPushButton#startButton { background: #2F6299; color: white; border: none; border-radius: 4px; font-size: 10pt; }
+        QPushButton#startButton:hover { background: #3a74b2; }
+        QFrame#recentCard { background: #2a313a; border: 1px solid #39424e; border-radius: 6px; }
+        QFrame#recentCard:hover { border: 1px solid #DC6E2D; }
     """)
+
+
+class Splash(QSplashScreen):
+    def __init__(self):
+        super().__init__(branding.splash_pixmap())
+        self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
+
+    def message(self, text):
+        self.showMessage(text, Qt.AlignLeft | Qt.AlignBottom, QColor(200, 214, 232))
+        QApplication.processEvents()
 
 
 def main():
@@ -940,13 +1086,26 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("T2D")
+    app.setWindowIcon(branding.logo_icon())
     apply_dark_theme(app)
+    splash = Splash()
+    splash.show()
+    splash.message("   Yazı tipleri yükleniyor...")
+    import time
+    t0 = time.monotonic()
+    from t2dcad import fonts
+    fonts.setup()
+    splash.message("   Arayüz hazırlanıyor...")
     w = MainWindow()
-    w.show()
+    splash.message("   Hazır")
     files = [a for a in sys.argv[1:] if a.lower().endswith((".dwg", ".dxf"))]
-    if files:
+    show_time = int(settings.get_float("splash_seconds", 5.0) * 1000)
+    remaining = max(0, show_time - int((time.monotonic() - t0) * 1000))
+
+    def start():
+        w.show()
+        splash.finish(w)
         for f in files:
             w.file_open(f)
-    else:
-        w.file_new()
+    QTimer.singleShot(remaining, start)
     sys.exit(app.exec())

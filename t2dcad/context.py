@@ -53,6 +53,7 @@ class CommandContext:
     def command_finished(self):
         self.canvas.window_start = None
         self.canvas.osnap_override = None
+        self.canvas.clear_tracking()
         self.canvas.realtime_pan = False
         self.canvas.prune_selection()
         self.tab.main.update_ui_state()
@@ -138,6 +139,14 @@ class CommandContext:
         return False
 
     def direct_distance_point(self, base: Vec2, d: float) -> Optional[Vec2]:
+        c = self.canvas
+        if c.track_align is not None:
+            # distance along the object snap tracking line from the acquired point
+            a, u = c.track_align
+            c.clear_tracking()
+            return a + u * d
+        if base is None:
+            return None
         u = self.canvas.constrained_direction(base)
         if u is None:
             return None

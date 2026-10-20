@@ -37,6 +37,34 @@ jobs:
         shell: pwsh
         run: Copy-Item README.md dist/T2D-CAD/BENIOKU.md
 
+      - name: Bundle ODA File Converter (DWG support)
+        continue-on-error: true
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $page = (Invoke-WebRequest -Uri "https://www.opendesign.com/guestfiles/oda_file_converter" -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }).Content
+          $links = [regex]::Matches($page, 'href="([^"]*?ODAFileConverter[^"]*?\.msi)"') | ForEach-Object { $_.Groups[1].Value }
+          Write-Host "MSI links:"; $links | ForEach-Object { Write-Host "  $_" }
+          $url = $links | Where-Object { $_ -match 'amd64|x64' } | Select-Object -First 1
+          if (-not $url) { $url = $links | Select-Object -First 1 }
+          if (-not $url) { throw "ODA download link not found" }
+          $url = $url -replace '&amp;', '&'
+          if ($url.StartsWith("/")) { $url = "https://www.opendesign.com$url" }
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile oda.msi -UseBasicParsing -Headers @{ "User-Agent" = "Mozilla/5.0" }
+          $target = Join-Path $PWD "dist\T2D-CAD\oda"
+          Start-Process msiexec.exe -ArgumentList "/a `"$PWD\oda.msi`" /qn TARGETDIR=`"$target`"" -Wait
+          Get-ChildItem $target -Recurse -Filter *.msi | Remove-Item -ErrorAction SilentlyContinue
+          $exe = Get-ChildItem $target -Recurse -Filter ODAFileConverter.exe | Select-Object -First 1
+          if (-not $exe) { throw "ODAFileConverter.exe not found after extraction" }
+          Write-Host "Bundled: $($exe.FullName)"
+
+      - name: DWG round trip test with the bundled converter
+        continue-on-error: true
+        env:
+          T2D_TEST: "1"
+        run: python tools/dwg_smoke_test.py dist/T2D-CAD/oda
+
       - uses: actions/upload-artifact@v4
         with:
           name: T2D-CAD-windows

@@ -466,14 +466,14 @@ def mtext(ctx):
     a = yield GetPoint("İlk köşeyi belirtin")
     b = yield GetPoint("Karşı köşeyi belirtin", base=a, rubber=False,
                        preview=lambda p: [("rect", a, p)])
-    content, h = ctx.main.ask_mtext("", h)
+    content, h, style = ctx.main.ask_mtext("", h)
     if not content:
         return
     ctx.set_header("$TEXTSIZE", h)
     x0, x1 = sorted((a.x, b.x))
     y1 = max(a.y, b.y)
     e = ctx.msp.add_mtext(content.replace("\n", "\\P"),
-                          dxfattribs=ctx.attribs(char_height=h, width=x1 - x0, style=text_style(ctx)))
+                          dxfattribs=ctx.attribs(char_height=h, width=x1 - x0, style=style or text_style(ctx)))
     e.set_location((x0, y1), attachment_point=1)
     ctx.created(e)
 

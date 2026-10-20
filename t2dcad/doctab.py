@@ -171,6 +171,9 @@ class DocumentTab(QWidget):
         for kind, name in SNAP_NAMES.items():
             m.addAction(name, lambda k=kind: self._set_override({k}))
         m.addSeparator()
+        m.addAction("Referanstan (From)", lambda: self.manager.start_special("from"))
+        m.addAction("İki nokta ortası (M2P)", lambda: self.manager.start_special("m2p"))
+        m.addSeparator()
         m.addAction("Hiçbiri (None)", lambda: self._set_override(set()))
         m.addAction("Nesne yakalama ayarları...", self.main.osnap_settings)
         m.exec(gpos)

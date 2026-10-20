@@ -229,6 +229,9 @@ class CommandManager:
         self.last_command: Optional[str] = None
         self._first_selection = True
         self._dist_first: Optional[Vec2] = None  # 2-point distance input
+        # point modifiers: FROM (reference point + offset), M2P (mid between 2 points)
+        self._special: Optional[str] = None
+        self._special_pt: Optional[Vec2] = None
 
     # ------------------------------------------------------------ state
     @property
@@ -247,6 +250,14 @@ class CommandManager:
             txt += f" <{d}>"
         if self._dist_first is not None:
             txt = "İkinci noktayı belirtin:"
+        if self._special == "from_base":
+            txt = "Referans (temel) noktası:"
+        elif self._special == "from_off":
+            txt = "<Ofset> (ör. @10,5 veya mesafe):"
+        elif self._special == "m2p1":
+            txt = "Orta noktanın ilk noktası:"
+        elif self._special == "m2p2":
+            txt = "Orta noktanın ikinci noktası:"
         return txt + ":" if not txt.endswith(":") else txt
 
     # ------------------------------------------------------------ control
@@ -312,6 +323,8 @@ class CommandManager:
             return
         self.req = req
         self._dist_first = None
+        self._special = None
+        self._special_pt = None
         # pickfirst selection
         if isinstance(req, GetSelection) and self._first_selection:
             self._first_selection = False
@@ -371,6 +384,39 @@ class CommandManager:
         self.ctx.command_finished()
         self.ctx.prompt_changed()
 
+    # ------------------------------------------------------------ point modifiers
+    def start_special(self, kind: str) -> bool:
+        """kind: 'from' or 'm2p' (only while a point is requested)."""
+        if not isinstance(self.req, GetPoint):
+            self.ctx.print("Bu seçenek sadece nokta istenirken kullanılabilir.")
+            return False
+        self._special = "from_base" if kind == "from" else "m2p1"
+        self._special_pt = None
+        self.ctx.prompt_changed()
+        return True
+
+    def _special_point(self, p: Vec2) -> Optional[Vec2]:
+        """Returns the final point or None if the point was consumed."""
+        st = self._special
+        if st is None:
+            return p
+        if st == "from_base":
+            self._special_pt = p
+            self._special = "from_off"
+            self.ctx.last_point = p
+            self.ctx.prompt_changed()
+            return None
+        if st == "m2p1":
+            self._special_pt = p
+            self._special = "m2p2"
+            self.ctx.prompt_changed()
+            return None
+        if st == "m2p2":
+            p = self._special_pt.lerp(p)
+        self._special = None
+        self._special_pt = None
+        return p
+
     # ------------------------------------------------------------ input
     def send(self, value):
         if self.gen is None:
@@ -388,8 +434,9 @@ class CommandManager:
         if isinstance(r, GetSelection):
             self.send(self.ctx.end_selection())
             return
-        if self._dist_first is not None:
+        if self._dist_first is not None or self._special is not None:
             self._dist_first = None
+            self._special = None
             self.ctx.prompt_changed()
             return
         if r.default is not None:
@@ -429,16 +476,27 @@ class CommandManager:
             self.send(kw)
             return
         if isinstance(r, GetPoint):
+            up = text.strip().upper()
+            if up in ("FROM", "FRO", "FR", "_FROM"):
+                self.start_special("from")
+                return
+            if up in ("M2P", "MTP", "_M2P"):
+                self.start_special("m2p")
+                return
             ov = self.ctx.osnap_override_from_text(text)
             if ov:
                 return
             p = parse_point(text, self.ctx.last_point)
             if p is None:
                 d = parse_number(text)
-                if d is not None and (r.base is not None):
-                    p = self.ctx.direct_distance_point(r.base, d)
+                base = self.rubber_base
+                if d is not None and (base is not None or self.ctx.canvas.track_align is not None):
+                    p = self.ctx.direct_distance_point(base, d)
             if p is None:
                 self.ctx.print("Geçersiz nokta.")
+                return
+            p = self._special_point(p)
+            if p is None:
                 return
             self.ctx.last_point = p
             self.send(p)
@@ -484,6 +542,9 @@ class CommandManager:
         if r is None:
             return
         if isinstance(r, GetPoint):
+            p = self._special_point(p)
+            if p is None:
+                return
             self.ctx.last_point = p
             self.send(p)
         elif isinstance(r, (GetDistance, GetAngle)):
@@ -503,6 +564,10 @@ class CommandManager:
         r = self.req
         if self._dist_first is not None:
             return self._dist_first
+        if self._special in ("from_off", "m2p2"):
+            return self._special_pt
+        if self._special in ("from_base", "m2p1"):
+            return None
         if isinstance(r, (GetPoint, GetDistance, GetAngle)):
             return r.base
         return None

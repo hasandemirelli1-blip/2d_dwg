@@ -245,6 +245,17 @@ class CadDocument(QObject):
         self._record(("add", entity))
         self.changed.emit([entity], [], False)
 
+    def added_many(self, entities) -> None:
+        """Register many new modelspace entities at once (one redraw)."""
+        entities = list(entities)
+        if not entities:
+            return
+        self.begin("import")
+        for e in entities:
+            self._record(("add", e))
+        self.commit()
+        self.changed.emit(entities, [], False)
+
     def add_entity(self, entity) -> None:
         """Bind (if necessary) and add a virtual entity to the modelspace."""
         if not factory.is_bound(entity, self.doc):

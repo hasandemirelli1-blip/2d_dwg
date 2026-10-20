@@ -4,12 +4,13 @@ Every graphics item stores the handle of its top level DXF entity, which makes
 incremental updates and picking possible."""
 from __future__ import annotations
 
+import math
 from collections import defaultdict
 from typing import Iterable, Optional
 
 import numpy as np
 from PySide6.QtCore import Qt, QRectF, QPointF
-from PySide6.QtGui import QPainterPath, QColor
+from PySide6.QtGui import QPainterPath, QColor, QPen, QPolygonF, QTransform
 from PySide6.QtWidgets import QGraphicsScene, QGraphicsLineItem, QGraphicsPathItem, QGraphicsPolygonItem
 
 from ezdxf.addons.drawing.frontend import Frontend
@@ -17,30 +18,129 @@ from ezdxf.addons.drawing.properties import RenderContext, LayoutProperties
 from ezdxf.addons.drawing.config import (
     Configuration, BackgroundPolicy, ColorPolicy, LineweightPolicy, HatchPolicy,
 )
-from ezdxf.addons.drawing.pyqt import _PyQtBackend
+from ezdxf.addons.drawing.pyqt import _PyQtBackend, _CosmeticPath
+from ezdxf.npshapes import to_qpainter_path
 
 HANDLE_KEY = Qt.UserRole + 10
 MODEL_BG = "#212830"
 
 
 class TrackingBackend(_PyQtBackend):
+    """Collects all strokes/fills of one top level entity into a few
+    QGraphicsPathItems (one per color/lineweight) instead of one item per line
+    segment. Dashed lines, hatch patterns and blocks produce thousands of
+    segments; batching them makes loading, painting and picking much faster."""
+
     def __init__(self, scene: QGraphicsScene):
         super().__init__(scene)
         self.items: dict[str, list] = defaultdict(list)
+        self._cur: Optional[str] = None
+        self._strokes: dict = {}
+        self._fills: dict = {}
+        self._pens: dict = {}
 
     def set_item_data(self, item, entity_handle: str) -> None:
         item.setData(HANDLE_KEY, entity_handle)
         self.items[entity_handle].append(item)
 
+    # ------------------------------------------------------------ batching
+    def _switch(self, handle) -> None:
+        if handle != self._cur:
+            self.flush()
+            self._cur = handle
+
+    def _stroke(self, properties) -> QPainterPath:
+        self._switch(properties.handle)
+        key = (properties.color, properties.lineweight)
+        entry = self._strokes.get(key)
+        if entry is None:
+            pen = self._pens.get(key)
+            if pen is None:
+                pen = self._get_pen(properties)
+                self._pens[key] = pen
+            entry = [QPainterPath(), pen]
+            self._strokes[key] = entry
+        return entry[0]
+
+    def _fill(self, properties, outline: bool) -> QPainterPath:
+        self._switch(properties.handle)
+        key = (properties.color, properties.lineweight, outline)
+        entry = self._fills.get(key)
+        if entry is None:
+            pen = self._get_pen(properties) if outline else QPen(Qt.NoPen)
+            entry = [QPainterPath(), pen, self._get_fill_brush(properties.color)]
+            entry[0].setFillRule(Qt.OddEvenFill)
+            self._fills[key] = entry
+        return entry[0]
+
+    def flush(self) -> None:
+        h = self._cur
+        if h is None:
+            return
+        scene = self._scene
+        for path, pen, brush in self._fills.values():
+            item = _CosmeticPath(path)
+            item.setPen(pen)
+            item.setBrush(brush)
+            scene.addItem(item)
+            self.set_item_data(item, h)
+        for path, pen in self._strokes.values():
+            item = QGraphicsPathItem(path)
+            item.setPen(pen)
+            item.setBrush(Qt.NoBrush)
+            scene.addItem(item)
+            self.set_item_data(item, h)
+        self._fills = {}
+        self._strokes = {}
+
+    # ------------------------------------------------------------ primitives
+    def draw_line(self, start, end, properties) -> None:
+        if start.isclose(end):
+            self._switch(properties.handle)
+            self.draw_point(start, properties)
+            return
+        p = self._stroke(properties)
+        p.moveTo(start.x, start.y)
+        p.lineTo(end.x, end.y)
+
+    def draw_solid_lines(self, lines, properties) -> None:
+        p = self._stroke(properties)
+        for s, e in lines:
+            p.moveTo(s.x, s.y)
+            p.lineTo(e.x, e.y)
+
+    def draw_path(self, path, properties) -> None:
+        if len(path) == 0:
+            return
+        self._stroke(properties).addPath(to_qpainter_path([path]))
+
+    def draw_filled_paths(self, paths, properties) -> None:
+        _paths = list(paths)
+        if not _paths:
+            return
+        self._fill(properties, True).addPath(to_qpainter_path(_paths))
+
+    def draw_filled_polygon(self, points, properties) -> None:
+        poly = QPolygonF([QPointF(p.x, p.y) for p in points.vertices()])
+        self._fill(properties, False).addPolygon(poly)
+
+    def draw_image(self, image_data, properties) -> None:
+        self._switch(properties.handle)
+        super().draw_image(image_data, properties)
+
     def finalize(self) -> None:
         # keep the scene rect unbounded (no setSceneRect)
-        pass
+        self.flush()
 
     def set_background(self, color) -> None:
         # the canvas paints the background (and the grid below the entities)
         self._scene.setBackgroundBrush(Qt.NoBrush)
 
     def clear(self) -> None:
+        self._strokes = {}
+        self._fills = {}
+        self._pens = {}
+        self._cur = None
         self._scene.clear()
         self.items.clear()
 
@@ -65,10 +165,95 @@ class PrintBackend(TrackingBackend):
         return pen
 
 
+class CachingFrontend(Frontend):
+    """Draws the content of each block definition only once and reuses it
+    (with a transformation) for all block references with the same properties."""
+
+    def __init__(self, ctx, backend, config, renderer):
+        super().__init__(ctx, backend, config=config)
+        self.renderer = renderer
+        self.block_cache: dict = {}
+
+    def draw_entity(self, entity, properties) -> None:
+        if (entity.dxftype() == "INSERT" and not entity.is_virtual
+                and entity.dxf.get("row_count", 1) <= 1 and entity.dxf.get("column_count", 1) <= 1):
+            try:
+                if self._draw_cached_insert(entity, properties):
+                    return
+            except Exception as ex:  # fall back to the normal way
+                print("block cache:", ex)
+        super().draw_entity(entity, properties)
+
+    def _block_content(self, insert, properties):
+        key = (insert.dxf.name, properties.layer, properties.color, properties.linetype_name,
+               properties.lineweight, properties.pen)
+        content = self.block_cache.get(key)
+        if content is not None:
+            return content
+        from ezdxf.entities import Insert
+        attribs = insert.dxfattribs(drop={"handle", "owner", "insert", "xscale", "yscale", "zscale",
+                                          "rotation", "extrusion", "row_count", "column_count",
+                                          "row_spacing", "column_spacing"})
+        ins0 = Insert.new(dxfattribs=attribs, doc=insert.doc)
+        backend = self.renderer.backend
+        main_scene, main_items = backend._scene, backend.items
+        tmp = QGraphicsScene()
+        backend.flush()
+        backend._scene = tmp
+        backend.items = defaultdict(list)
+        backend._cur = None
+        try:
+            self.pipeline.set_current_entity_handle("__block__")
+            super().draw_entity(ins0, properties)
+            backend.flush()
+            items = backend.items.get("__block__", [])
+            content = []
+            for it in items:
+                if isinstance(it, QGraphicsPathItem):
+                    content.append((QPainterPath(it.path()), QPen(it.pen()), it.brush(),
+                                    isinstance(it, _CosmeticPath)))
+        finally:
+            backend._scene = main_scene
+            backend.items = main_items
+            backend._cur = None
+            tmp.clear()
+        m0 = ins0.matrix44()
+        m0.inverse()
+        content = (content, m0)
+        self.block_cache[key] = content
+        return content
+
+    def _draw_cached_insert(self, insert, properties) -> bool:
+        items, m0_inv = self._block_content(insert, properties)
+        m = m0_inv @ insert.matrix44()
+        qt = QTransform(*m.get_2d_transformation())
+        backend = self.renderer.backend
+        backend.flush()
+        handle = insert.dxf.handle
+        scene = backend._scene
+        for path, pen, brush, cosmetic in items:
+            it = _CosmeticPath(path) if cosmetic else QGraphicsPathItem(path)
+            it.setPen(pen)
+            it.setBrush(brush)
+            it.setTransform(qt)
+            scene.addItem(it)
+            backend.set_item_data(it, handle)
+        # attributes are drawn normally and assigned to the block reference
+        attribs = [a for a in insert.attribs if not a.is_invisible]
+        if attribs:
+            self.draw_entities(attribs)
+            backend.flush()
+            for a in attribs:
+                for it in backend.items.pop(a.dxf.handle, []):
+                    backend.set_item_data(it, handle)
+        backend._cur = None
+        return True
+
+
 class EntityGeometry:
     """Flattened geometry of one entity for picking and highlighting."""
 
-    __slots__ = ("lines", "fills", "bbox", "is_text")
+    __slots__ = ("lines", "fills", "bbox", "is_text", "npts", "segs")
 
     def __init__(self, items: list, is_text=False):
         polylines = []
@@ -84,6 +269,8 @@ class EntityGeometry:
                 polylines.append(np.array([[ln.x1(), ln.y1()], [ln.x2(), ln.y2()]]))
             elif isinstance(it, QGraphicsPathItem):
                 path = it.path()
+                if not it.transform().isIdentity():  # cached block content
+                    path = it.sceneTransform().map(path)
                 if it.brush().style() != Qt.NoBrush:
                     fills.append(path)
                 for poly in path.toSubpathPolygons():
@@ -102,6 +289,13 @@ class EntityGeometry:
                 c = r.center()
                 polylines.append(np.array([[c.x(), c.y()], [c.x(), c.y()]]))
         self.lines = polylines
+        self.npts = sum(len(pl) for pl in polylines)
+        # all segments in one array (N x 4) for fast vectorized tests
+        if polylines:
+            self.segs = np.vstack([np.hstack([pl[:-1], pl[1:]]) for pl in polylines if len(pl) > 1]) \
+                if any(len(pl) > 1 for pl in polylines) else np.zeros((0, 4))
+        else:
+            self.segs = np.zeros((0, 4))
         self.fills = fills
         self.bbox = (x0, y0, x1, y1) if x0 <= x1 else (0, 0, 0, 0)
         self.is_text = is_text
@@ -116,17 +310,15 @@ class EntityGeometry:
         for path in self.fills:
             if path.contains(QPointF(x, y)):
                 return 0.0
-        p = np.array([x, y])
-        for pl in self.lines:
-            a = pl[:-1]
-            b = pl[1:]
-            d = b - a
+        if len(self.segs):
+            a = self.segs[:, 0:2]
+            d = self.segs[:, 2:4] - a
+            p = np.array([x, y])
             l2 = (d * d).sum(axis=1)
             l2[l2 == 0] = 1e-30
             t = np.clip(((p - a) * d).sum(axis=1) / l2, 0.0, 1.0)
             proj = a + d * t[:, None]
-            dist = np.sqrt(((proj - p) ** 2).sum(axis=1)).min()
-            best = min(best, dist)
+            best = min(best, float(np.sqrt(((proj - p) ** 2).sum(axis=1)).min()))
         return best
 
     def inside(self, x0, y0, x1, y1) -> bool:
@@ -143,10 +335,31 @@ class EntityGeometry:
         for path in self.fills:
             if path.intersects(rect):
                 return True
-        for pl in self.lines:
-            if _polyline_hits_rect(pl, x0, y0, x1, y1):
-                return True
+        if len(self.segs) and _segments_hit_rect(self.segs, x0, y0, x1, y1):
+            return True
         return False
+
+
+def _segments_hit_rect(segs: np.ndarray, x0, y0, x1, y1) -> bool:
+    a = segs[:, 0:2]
+    b = segs[:, 2:4]
+    for pts in (a, b):
+        inside = (pts[:, 0] >= x0) & (pts[:, 0] <= x1) & (pts[:, 1] >= y0) & (pts[:, 1] <= y1)
+        if inside.any():
+            return True
+    d = b - a
+    edges = [((x0, y0), (x1, y0)), ((x1, y0), (x1, y1)), ((x1, y1), (x0, y1)), ((x0, y1), (x0, y0))]
+    for (ex0, ey0), (ex1, ey1) in edges:
+        e = np.array([ex1 - ex0, ey1 - ey0])
+        den = d[:, 0] * e[1] - d[:, 1] * e[0]
+        with np.errstate(divide="ignore", invalid="ignore"):
+            w0 = ex0 - a[:, 0]
+            w1 = ey0 - a[:, 1]
+            t = (w0 * e[1] - w1 * e[0]) / den
+            u = (w0 * d[:, 1] - w1 * d[:, 0]) / den
+        if ((den != 0) & (t >= 0) & (t <= 1) & (u >= 0) & (u <= 1)).any():
+            return True
+    return False
 
 
 def _polyline_hits_rect(pl: np.ndarray, x0, y0, x1, y1) -> bool:
@@ -210,7 +423,7 @@ class Renderer:
         props = LayoutProperties.from_layout(msp)
         props.set_colors(self.background)
         ctx.current_layout_properties = props
-        self.frontend = Frontend(ctx, self.backend, config=self.make_config())
+        self.frontend = CachingFrontend(ctx, self.backend, self.make_config(), self)
 
     # -------------------------------------------------------------- render
     def regen(self, plot_only: bool = False):
@@ -226,7 +439,10 @@ class Renderer:
             no_plot.add("defpoints")
             filter_func = lambda e: e.dxf.layer.lower() not in no_plot  # noqa: E731
         try:
-            self.frontend.draw_layout(msp, finalize=False, filter_func=filter_func)
+            from ezdxf import reorder
+            handle_mapping = list(msp.get_redraw_order())
+            entities = reorder.ascending(msp, handle_mapping) if handle_mapping else msp
+            self.fast_draw(entities, filter_func)
         except Exception as ex:  # robustness against broken entities
             print("render error:", ex)
             self.backend.clear()
@@ -235,25 +451,132 @@ class Renderer:
                     self._draw_safe([e])
         self._z = float(len(self.scene.items()))
 
+    # -------------------------------------------------------------- fast path
+    FAST_TYPES = frozenset(("LINE", "CIRCLE", "ARC", "LWPOLYLINE"))
+
+    def fast_draw(self, entities, filter_func=None):
+        """Draw simple entities (continuous LINE, CIRCLE, ARC, LWPOLYLINE)
+        directly into the backend, everything else by the ezdxf frontend."""
+        self._prop_cache = {}
+        batch = []
+        frontend = self.frontend
+        for e in entities:
+            if filter_func is not None and not filter_func(e):
+                continue
+            if e.dxftype() in self.FAST_TYPES:
+                if batch:
+                    frontend.draw_entities(batch)
+                    self.backend.flush()
+                    batch = []
+                try:
+                    if self._fast(e):
+                        continue
+                except Exception as ex:
+                    print("fast draw:", e, ex)
+            batch.append(e)
+        if batch:
+            frontend.draw_entities(batch)
+        self.backend.flush()
+
+    def _fast(self, e) -> bool:
+        d = e.dxf
+        if d.get("thickness", 0) or e.dxftype() == "LWPOLYLINE" and (
+                d.get("const_width", 0) or any(sw or ew for sw, ew in e.get_points("se"))):
+            return False
+        ext = d.get("extrusion", None)
+        if ext is not None and (abs(ext[0]) > 1e-12 or abs(ext[1]) > 1e-12 or ext[2] < 0):
+            return False
+        key = (d.layer, d.get("color", 256), d.get("true_color", None), d.get("linetype", "BYLAYER"),
+               d.get("lineweight", -1), d.get("transparency", None))
+        bp = self._prop_cache.get(key)
+        if bp is None:
+            frontend = self.frontend
+            props = frontend.ctx.resolve_all(e)
+            frontend.exec_property_override(e, props)
+            if not props.is_visible:
+                bp = "skip"
+            elif props.linetype_pattern and len(props.linetype_pattern) > 0 \
+                    and props.linetype_name.upper() not in ("CONTINUOUS", ""):
+                bp = "slow"
+            else:
+                bp = frontend.pipeline.get_backend_properties(props)
+            self._prop_cache[key] = bp
+        if bp == "skip":
+            return True
+        if bp == "slow":
+            return False
+        bp = bp._replace(handle=d.handle)
+        path = self.backend._stroke(bp)
+        t = e.dxftype()
+        if t == "LINE":
+            s, en = d.start, d.end
+            path.moveTo(s.x, s.y)
+            path.lineTo(en.x, en.y)
+        elif t == "CIRCLE":
+            c, r = d.center, d.radius
+            path.addEllipse(QPointF(c.x, c.y), r, r)
+        elif t == "ARC":
+            c, r = d.center, d.radius
+            a0 = d.start_angle
+            sweep = (d.end_angle - a0) % 360.0
+            if sweep < 1e-9:
+                sweep = 360.0
+            rect = QRectF(c.x - r, c.y - r, 2 * r, 2 * r)
+            path.arcMoveTo(rect, -a0)
+            path.arcTo(rect, -a0, -sweep)
+        else:  # LWPOLYLINE
+            pts = list(e.get_points("xyb"))
+            if not pts:
+                return True
+            closed = e.closed
+            path.moveTo(pts[0][0], pts[0][1])
+            n = len(pts)
+            last = n if closed else n - 1
+            for i in range(last):
+                x1, y1, b = pts[i]
+                x2, y2, _ = pts[(i + 1) % n]
+                if abs(b) < 1e-12:
+                    path.lineTo(x2, y2)
+                    continue
+                theta = 4.0 * math.atan(b)  # signed sweep, CCW positive
+                dx, dy = x2 - x1, y2 - y1
+                chord = math.hypot(dx, dy)
+                if chord < 1e-12:
+                    continue
+                r = chord / (2.0 * abs(math.sin(theta / 2)))
+                h = (chord / 2.0) / math.tan(theta / 2)
+                cx = (x1 + x2) / 2 - dy / chord * h
+                cy = (y1 + y2) / 2 + dx / chord * h
+                a0 = math.degrees(math.atan2(y1 - cy, x1 - cx))
+                path.arcTo(QRectF(cx - r, cy - r, 2 * r, 2 * r), -a0, -math.degrees(theta))
+            if closed:
+                path.closeSubpath()
+        return True
+
     def _draw_safe(self, entities: Iterable):
         for e in entities:
             try:
                 self.frontend.draw_entities([e])
             except Exception as ex:
                 print("render error:", e, ex)
+            self.backend.flush()
 
     def add(self, entities: Iterable):
         if self.frontend is None:
             self._make_frontend()
-        before = set()
         ents = [e for e in entities if e.is_alive]
-        for e in ents:
-            before.add(e.dxf.handle)
-            self.remove_handle(e.dxf.handle)
-        n_before = len(self.scene.items())
-        self._draw_safe(ents)
+        handles = [e.dxf.handle for e in ents]
+        for h in handles:
+            self.remove_handle(h)
+        try:
+            self.fast_draw(ents)
+        except Exception as ex:
+            print("render error:", ex)
+            for h in handles:
+                self.remove_handle(h)
+            self._draw_safe(ents)
         # new items on top
-        for h in before:
+        for h in handles:
             for it in self.backend.items.get(h, []):
                 self._z += 1.0
                 it.setZValue(self._z)

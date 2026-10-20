@@ -165,6 +165,7 @@ class MainWindow(QMainWindow):
         m.addSeparator()
         m.addAction(A("plot", "&Çizdir / Yazdır...", "PLOT", "print", "Ctrl+P"))
         m.addAction(A("pdf", "PDF olarak dışa aktar...", "EXPORTPDF"))
+        m.addAction(A("pdfimport", "PDF içe aktar...", "PDFIMPORT", "open"))
         m.addSeparator()
         m.addAction(A("close", "Çizimi kapat", None, None, "Ctrl+F4",
                       lambda: self.close_tab(self.current_tab())))
@@ -701,6 +702,10 @@ class MainWindow(QMainWindow):
             p = url.toLocalFile()
             if p.lower().endswith((".dwg", ".dxf")):
                 self.file_open(p)
+            elif p.lower().endswith(".pdf"):
+                if self.current_tab() is None:
+                    self.file_new()
+                self.run("PDFIMPORT")
 
     # ------------------------------------------------------------ status / layer bar
     def _cursor_moved(self, x, y):
@@ -908,6 +913,24 @@ class MainWindow(QMainWindow):
                           f"<b>{APP_NAME} {__version__}</b><br>AutoCAD benzeri 2B çizim programı.<br><br>"
                           "DXF: ezdxf kütüphanesi · DWG: ODA File Converter (ücretsiz)<br>"
                           "Arayüz: Qt (PySide6)")
+
+    def pdf_import_dialog(self, path=None):
+        """Returns (PdfImportOptions, path) or (None, None)."""
+        try:
+            import pymupdf  # noqa: F401
+        except ImportError:
+            QMessageBox.critical(self, "PDF içe aktar", "PDF kütüphanesi (PyMuPDF) bulunamadı.")
+            return None, None
+        if not path:
+            path, _ = QFileDialog.getOpenFileName(self, "PDF içe aktar", settings.get("last_dir", ""), "PDF (*.pdf)")
+            if not path:
+                return None, None
+        from t2dcad.ui.dialogs import PdfImportDialog
+        dlg = PdfImportDialog(path, self)
+        if not dlg.exec():
+            return None, None
+        settings.set("last_dir", os.path.dirname(dlg.path.text()))
+        return dlg.options(), dlg.path.text()
 
     def text_style_dialog(self):
         tab = self.current_tab()

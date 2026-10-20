@@ -104,6 +104,14 @@ noktadan o mesafede oluşur. İki izleme çizgisinin kesişimine de yakalanır.
   **Bloktan çıkar** (`REFREMOVE`): bloktaki bir nesneyi bloktan çıkarıp çizimde bırakır.
 * **Değişiklikleri kaydet** (`REFCLOSE`): bloğun tüm kopyaları güncellenir. **Vazgeç**: hiçbir şey değişmez.
 
+### PDF içe aktarma (PDFIMPORT)
+* `PDFIMPORT` yazın, menüden (Dosya / Ekle sekmesi) seçin veya PDF dosyasını pencereye sürükleyin.
+* AutoCAD / progeCAD'deki gibi: çizgiler, yaylar, daireler, elipsler, polyline'lar, dolu alanlar (SOLID tarama)
+  ve TrueType yazılar **düzenlenebilir nesneler** olarak gelir. Renkler, çizgi kalınlıkları ve kesikli çizgiler korunur.
+* Ölçek: 1 = kağıt üzerindeki gerçek boyut (mm). Çizim 1:50 çizdirildiyse 50 yazın, gerçek ölçüler gelir.
+* Katmanlar: nesne türüne göre (PDF_Geometri / PDF_Dolgu / PDF_Yazi), PDF'nin kendi katmanları veya geçerli katman.
+* Raster resimler ve SHX yazıların metne dönüştürülmesi desteklenmez (SHX yazılar çizgi olarak gelir).
+
 ### Özellikler paneli (Ctrl+1)
 * Yazılarda stil, **yazı tipi**, yükseklik, dönme, genişlik faktörü, eğiklik, hizalama.
 * Ölçülerde AutoCAD'deki gruplar: Çizgiler ve oklar (ok tipleri, ok boyutu, uzatma çizgileri),

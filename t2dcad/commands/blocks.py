@@ -306,3 +306,51 @@ def refclose_save(ctx):
 @command("REFCLOSE_DISCARD", undoable=False, repeatable=False)
 def refclose_discard(ctx):
     _close(ctx, False)
+
+
+# ---------------------------------------------------------------- PDF import
+@command("PDFIMPORT", "IMPORTPDF", "PDFI", "PDFATTACH")
+def pdfimport_cmd(ctx):
+    from ezdxf.math import Vec2 as _V
+    opts, path = ctx.main.pdf_import_dialog()
+    if opts is None:
+        return
+    from t2dcad import pdfimport
+    try:
+        w, h, n = pdfimport.page_size_mm(path, opts.page)
+    except Exception as ex:
+        ctx.print(f"PDF okunamadı: {ex}")
+        return
+    w, h = w * opts.scale, h * opts.scale
+    p = yield GetPoint("Yerleştirme noktasını belirtin <0,0>", allow_none=True,
+                       preview=lambda q: [("rect", q, q + _V(w, h))], rubber=False)
+    base = p if p is not None else _V(0, 0)
+    from PySide6.QtWidgets import QApplication, QProgressDialog
+    from PySide6.QtCore import Qt
+    dlg = QProgressDialog("PDF okunuyor...", "Durdur", 0, 100, ctx.main)
+    dlg.setWindowTitle("PDF içe aktar")
+    dlg.setWindowModality(Qt.WindowModal)
+    dlg.setMinimumDuration(400)
+
+    def progress(f):
+        dlg.setValue(int(f * 100))
+        QApplication.processEvents()
+        return not dlg.wasCanceled()
+    QApplication.setOverrideCursor(Qt.WaitCursor)
+    try:
+        imp = pdfimport.PdfImporter(ctx.doc, opts, base, ctx.attribs())
+        res = imp.run(path, progress)
+        dlg.setLabelText("Çiziliyor...")
+        dlg.setValue(92)
+        QApplication.processEvents()
+        ctx.doc.added_many(res.entities)
+        ctx.doc.layers_changed.emit()
+    finally:
+        dlg.close()
+        QApplication.restoreOverrideCursor()
+    parts = ", ".join(f"{v} {k}" for k, v in res.counts.items()) or "hiç nesne"
+    ctx.print(f"PDF içe aktarıldı: {parts}.")
+    for wmsg in res.warnings:
+        ctx.print(wmsg)
+    if res.entities:
+        ctx.canvas.zoom_rect(base.x, base.y, base.x + w, base.y + h, 1.05)

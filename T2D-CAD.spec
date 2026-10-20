@@ -5,7 +5,7 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 datas = collect_data_files("ezdxf") + [("t2dcad/resources", "t2dcad/resources")]
 hiddenimports = collect_submodules("ezdxf.addons.drawing") + [
     "ezdxf.addons.odafc", "ezdxf.addons.importer", "ezdxf.addons.xqt",
-    "PySide6.QtPrintSupport",
+    "PySide6.QtPrintSupport", "pymupdf",
 ]
 
 a = Analysis(

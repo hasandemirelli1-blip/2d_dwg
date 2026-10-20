@@ -346,7 +346,7 @@ def ellipse(ctx):
     if ratio > 1:
         ratio = major.magnitude / q
         major = Vec2.from_angle(major.angle + math.pi / 2, q)
-    e = ctx.msp.add_ellipse(c, major=Vec3(major.x, major.y, 0), ratio=ratio, dxfattribs=ctx.attribs())
+    e = ctx.msp.add_ellipse(c, major_axis=Vec3(major.x, major.y, 0), ratio=ratio, dxfattribs=ctx.attribs())
     ctx.created(e)
 
 

@@ -51,7 +51,13 @@ class DocumentTab(QWidget):
         self.renderer.add(added)
         self.snap.invalidate([e.dxf.handle for e in removed + added])
         self.canvas.prune_selection()
-        self.canvas.invalidate()
+        if removed:
+            self.canvas.invalidate()
+        else:
+            # new objects only: paint them onto the cached image
+            items = [it for e in added for it in self.renderer.items_of(e.dxf.handle)]
+            if not self.canvas.paint_new_items(items):
+                self.canvas.invalidate()
         self.main.on_selection_changed()
 
     def on_layers_changed(self):

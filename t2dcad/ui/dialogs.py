@@ -547,3 +547,99 @@ class TextStyleDialog(QDialog):
             name = name[:-4] + ".shx"
         self._fill_fonts(name)
         QMessageBox.information(self, "Yazı tipi", f'"{name}" yazı tipi eklendi.')
+
+
+class PdfImportDialog(QDialog):
+    """PDFIMPORT options (like AutoCAD / progeCAD)."""
+
+    def __init__(self, path: str, parent=None):
+        super().__init__(parent)
+        from t2dcad import pdfimport
+        self.pdfimport = pdfimport
+        self.setWindowTitle("PDF içe aktar")
+        self.setMinimumWidth(480)
+        v = QVBoxLayout(self)
+        row = QHBoxLayout()
+        self.path = QLineEdit(path)
+        b = QPushButton("Gözat...")
+        b.clicked.connect(self._browse)
+        row.addWidget(self.path, 1)
+        row.addWidget(b)
+        v.addLayout(row)
+        f = QFormLayout()
+        self.page = QSpinBox()
+        self.page.setMinimum(1)
+        self.page.valueChanged.connect(self._info)
+        self.info = QLabel()
+        f.addRow("Sayfa:", self.page)
+        f.addRow("", self.info)
+        self.scale = QDoubleSpinBox()
+        self.scale.setRange(0.0001, 100000)
+        self.scale.setDecimals(4)
+        self.scale.setValue(settings.get_float("pdf_scale", 1.0))
+        self.scale.setToolTip("1 = kağıt üzerindeki gerçek boyut (mm).\n"
+                              "Çizim 1:50 çizdirildiyse 50 yazın, gerçek ölçüler gelir.")
+        f.addRow("Ölçek:", self.scale)
+        v.addLayout(f)
+        g = QGroupBox("İçe aktarılacaklar")
+        gl = QVBoxLayout(g)
+        self.vectors = QCheckBox("Vektörel geometri (çizgi, yay, daire, polyline)")
+        self.fills = QCheckBox("Dolu alanlar (SOLID tarama)")
+        self.text = QCheckBox("TrueType yazılar")
+        self.lw = QCheckBox("Çizgi kalınlıklarını uygula")
+        self.join = QCheckBox("Birleşik çizgi ve yay parçalarını polyline yap")
+        self.arcs = QCheckBox("Eğrilerden yay ve daire tanı")
+        self.colors = QCheckBox("PDF renklerini koru")
+        for cb, key in ((self.vectors, "pdf_vectors"), (self.fills, "pdf_fills"), (self.text, "pdf_text"),
+                        (self.lw, "pdf_lw"), (self.join, "pdf_join"), (self.arcs, "pdf_arcs"),
+                        (self.colors, "pdf_colors")):
+            cb.setChecked(settings.get_bool(key, True))
+            cb.setProperty("key", key)
+            gl.addWidget(cb)
+        v.addWidget(g)
+        f2 = QFormLayout()
+        self.layers = QComboBox()
+        self.layers.addItems(["Nesne türüne göre (PDF_Geometri, PDF_Dolgu, PDF_Yazi)",
+                              "PDF katmanlarını kullan", "Geçerli katman"])
+        self.layers.setCurrentIndex(settings.get_int("pdf_layers", 0))
+        f2.addRow("Katmanlar:", self.layers)
+        v.addLayout(f2)
+        v.addWidget(QLabel("Tamam'dan sonra yerleştirme noktasını gösterin (Enter = 0,0)."))
+        bb = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        bb.accepted.connect(self.accept)
+        bb.rejected.connect(self.reject)
+        v.addWidget(bb)
+        self._load_pages()
+
+    def _browse(self):
+        p, _ = QFileDialog.getOpenFileName(self, "PDF dosyası", settings.get("last_dir", ""), "PDF (*.pdf)")
+        if p:
+            self.path.setText(p)
+            self._load_pages()
+
+    def _load_pages(self):
+        try:
+            w, h, n = self.pdfimport.page_size_mm(self.path.text(), 0)
+            self.page.setMaximum(max(1, n))
+            self._info()
+        except Exception as ex:
+            self.info.setText(f"PDF okunamadı: {ex}")
+
+    def _info(self):
+        try:
+            w, h, n = self.pdfimport.page_size_mm(self.path.text(), self.page.value() - 1)
+            self.info.setText(f"{n} sayfa · bu sayfa {w:.0f} x {h:.0f} mm")
+        except Exception as ex:
+            self.info.setText(f"PDF okunamadı: {ex}")
+
+    def options(self):
+        o = self.pdfimport.PdfImportOptions(
+            page=self.page.value() - 1, scale=self.scale.value(), vectors=self.vectors.isChecked(),
+            fills=self.fills.isChecked(), text=self.text.isChecked(), lineweights=self.lw.isChecked(),
+            join=self.join.isChecked(), arcs=self.arcs.isChecked(), colors=self.colors.isChecked(),
+            layer_mode=["type", "pdf", "current"][self.layers.currentIndex()])
+        for cb in (self.vectors, self.fills, self.text, self.lw, self.join, self.arcs, self.colors):
+            settings.set(cb.property("key"), cb.isChecked())
+        settings.set("pdf_scale", self.scale.value())
+        settings.set("pdf_layers", self.layers.currentIndex())
+        return o

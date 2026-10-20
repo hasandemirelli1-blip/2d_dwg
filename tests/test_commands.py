@@ -256,3 +256,31 @@ def test_refedit_discard(tab):
     run(tab, "REFCLOSE_DISCARD")
     assert [e.dxftype() for e in tab.doc.doc.blocks.get("B2")] == ["LINE"]
     assert [e.dxftype() for e in tab.doc.msp] == ["INSERT"]
+
+
+def test_pdf_import(tab, tmp_path):
+    import pymupdf
+    pdf = pymupdf.open()
+    page = pdf.new_page(width=842, height=595)
+    sh = page.new_shape()
+    sh.draw_rect(pymupdf.Rect(40, 40, 802, 555))
+    sh.finish(color=(0, 0, 0), width=1)
+    sh.draw_circle((300, 300), 72)  # 72 pt = 25.4 mm
+    sh.finish(color=(0, 0, 0))
+    sh.draw_line((100, 100), (400, 100))
+    sh.finish(color=(1, 0, 0))
+    sh.commit()
+    page.insert_text((100, 80), "TEST 123", fontsize=14)
+    path = str(tmp_path / "t.pdf")
+    pdf.save(path)
+    from t2dcad.pdfimport import PdfImporter, PdfImportOptions
+    imp = PdfImporter(tab.doc, PdfImportOptions(), Vec2(0, 0), {"layer": "0"})
+    res = imp.run(path)
+    tab.doc.added_many(res.entities)
+    types = sorted(e.dxftype() for e in tab.doc.msp)
+    assert types == ["CIRCLE", "LINE", "LWPOLYLINE", "TEXT"]
+    c = [e for e in tab.doc.msp if e.dxftype() == "CIRCLE"][0]
+    assert c.dxf.radius == pytest.approx(25.4, abs=0.01)
+    assert Vec2(c.dxf.center).isclose(Vec2(300 * 25.4 / 72, (595 - 300) * 25.4 / 72), abs_tol=0.01)
+    run(tab, "U")
+    assert len(tab.doc.msp) == 0

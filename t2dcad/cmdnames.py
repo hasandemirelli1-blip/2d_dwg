@@ -28,7 +28,8 @@ DESCRIPTIONS = {
     "LAYULK": "Katman kilidini aç", "LAYISO": "Katmanı yalıt", "LAYUNISO": "Yalıtmayı kaldır",
     "LAYMCUR": "Nesnenin katmanını geçerli yap", "LAYMCH": "Katmanı eşle", "PURGE": "Temizle",
     "FONTIMPORT": "Yazı tipi içe aktar", "RIBBON": "Şerit menü", "MENUBAR": "Klasik menü",
-    "STARTPAGE": "Başlangıç sayfası",
+    "STARTPAGE": "Başlangıç sayfası", "PDFIMPORT": "PDF içe aktar", "REFEDIT": "Bloğu yerinde düzenle",
+    "REFADD": "Bloğa ekle", "REFREMOVE": "Bloktan çıkar", "REFCLOSE": "Blok düzenlemeyi kapat",
 }
 
 # frequently used commands first (AutoCAD-like suggestion order)

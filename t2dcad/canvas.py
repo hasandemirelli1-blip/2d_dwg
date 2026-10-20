@@ -47,6 +47,12 @@ class CadCanvas(QWidget):
         self._base_dirty = True
         self._sel_img: Optional[QImage] = None
         self._sel_dirty = True
+        self._base_view = None  # view (cx, cy, scale) of the cached images
+        self._sel_view = None
+        # pan/zoom first move the cached image, the real render follows when idle
+        self._render_timer = QTimer(self)
+        self._render_timer.setSingleShot(True)
+        self._render_timer.timeout.connect(self._render_now)
         # state
         self.cursor_screen = QPointF(-100, -100)
         self.cursor_raw = Vec2()
@@ -160,7 +166,51 @@ class CadCanvas(QWidget):
         # keep world point under cursor
         self.cx = w.x - (at.x() - self.width() / 2) / self.scale
         self.cy = w.y - (self.height() / 2 - at.y()) / self.scale
-        self.invalidate()
+        self.view_changed()
+
+    def view_changed(self, delay=140):
+        """Fast view change: the cached image is transformed until the
+        drawing is rendered again (when the mouse/wheel is idle)."""
+        self._render_timer.start(delay)
+        self.update()
+
+    def _render_now(self):
+        if self._base_view != self._view():
+            self._base_dirty = True
+            self._sel_dirty = True
+            self.update()
+
+    def _view(self):
+        return (self.cx, self.cy, self.scale, self.width(), self.height())
+
+    def _cache_transform(self, view) -> Optional[QTransform]:
+        """Transform from the cached image (rendered with `view`) to the screen."""
+        if view is None:
+            return None
+        cx0, cy0, s0, w0, h0 = view
+        if (w0, h0) != (self.width(), self.height()):
+            return None
+        k = self.scale / s0
+        tx = self.width() / 2 * (1 - k) + (cx0 - self.cx) * self.scale
+        ty = self.height() / 2 * (1 - k) - (cy0 - self.cy) * self.scale
+        return QTransform(k, 0, 0, k, tx, ty)
+
+    def paint_new_items(self, items) -> bool:
+        """Draw new scene items onto the cached image (no full render)."""
+        if self._base is None or self._base_dirty or self._base_view != self._view() or len(items) > 3000:
+            return False
+        from PySide6.QtWidgets import QStyleOptionGraphicsItem
+        p = QPainter(self._base)
+        p.setRenderHint(QPainter.Antialiasing, settings.get_bool("antialias", True))
+        wt = self.world_transform()
+        opt = QStyleOptionGraphicsItem()
+        for it in items:
+            p.setTransform(it.sceneTransform() * wt)
+            it.paint(p, opt, None)
+        p.end()
+        self._sel_dirty = True
+        self.update()
+        return True
 
     def invalidate(self, base=True):
         if base:
@@ -210,6 +260,7 @@ class CadCanvas(QWidget):
         p.end()
         self._base = img
         self._base_dirty = False
+        self._base_view = self._view()
 
     def _paint_grid(self, p: QPainter):
         g = self.grid_unit
@@ -260,6 +311,7 @@ class CadCanvas(QWidget):
             p.end()
         self._sel_img = img
         self._sel_dirty = False
+        self._sel_view = self._view()
 
     def _draw_entities(self, p: QPainter, handles, pen: QPen, transform: Optional[QTransform] = None):
         wt = self.world_transform()
@@ -285,13 +337,33 @@ class CadCanvas(QWidget):
         p.setTransform(QTransform())
 
     def paintEvent(self, ev):
-        if self._base is None or self._base_dirty or self._base.size() != self.size() * self.devicePixelRatioF():
+        moving = self._render_timer.isActive()
+        stale = self._base is not None and self._base_view != self._view()
+        if (self._base is None or self._base_dirty or self._base.size() != self.size() * self.devicePixelRatioF()
+                or (stale and not moving)):
             self._render_base()
-        if self._sel_dirty or self._sel_img is None or self._sel_img.size() != self._base.size():
+            self._sel_dirty = True
+        if self._sel_dirty and not (moving and self._sel_img is not None):
+            self._render_selection()
+        elif self._sel_img is None or self._sel_img.size() != self._base.size():
             self._render_selection()
         p = QPainter(self)
-        p.drawImage(0, 0, self._base)
-        p.drawImage(0, 0, self._sel_img)
+        bt = self._cache_transform(self._base_view)
+        if bt is None or bt.isIdentity():
+            p.drawImage(0, 0, self._base)
+        else:
+            p.fillRect(self.rect(), self.bg_color)
+            p.setTransform(bt)
+            p.setRenderHint(QPainter.SmoothPixmapTransform, False)
+            p.drawImage(0, 0, self._base)
+            p.resetTransform()
+        st = self._cache_transform(self._sel_view)
+        if st is None or st.isIdentity():
+            p.drawImage(0, 0, self._sel_img)
+        else:
+            p.setTransform(st)
+            p.drawImage(0, 0, self._sel_img)
+            p.resetTransform()
         p.setRenderHint(QPainter.Antialiasing, True)
         self._paint_hover(p)
         self._paint_preview(p)
@@ -306,6 +378,9 @@ class CadCanvas(QWidget):
 
     def _paint_hover(self, p: QPainter):
         if self.hover and self.hover not in self.selection:
+            g = self.renderer.geometry(self.hover)
+            if g is not None and g.npts > 20000:
+                return  # huge block/hatch: no hover highlight (keeps the cursor fast)
             pen = QPen(HOVER_COLOR, 2.5)
             pen.setCosmetic(True)
             self._draw_entities(p, [self.hover], pen)
@@ -880,7 +955,7 @@ class CadCanvas(QWidget):
         if ev.button() == Qt.MiddleButton or (self.realtime_pan and ev.button() == Qt.LeftButton):
             self.pan_last = None
             self.setCursor(Qt.BlankCursor)
-            self.invalidate()
+            self.view_changed(0)
             return
         if ev.button() == Qt.LeftButton and self.window_start is not None and self.window_press_screen is not None:
             d = ev.position() - self.window_press_screen
@@ -895,8 +970,8 @@ class CadCanvas(QWidget):
             self.pan_last = pos
             self.cx -= d.x() / self.scale
             self.cy += d.y() / self.scale
-            self.invalidate()
             self.cursor_screen = pos
+            self.view_changed(250)
             return
         self.update_cursor(pos)
 

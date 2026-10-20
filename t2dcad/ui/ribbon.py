@@ -29,6 +29,7 @@ LAYOUT = [
     ]),
     ("Ekle", [
         ("Blok", [("L", "insert"), ("L", "block")]),
+        ("İçe aktar", [("L", "pdfimport")]),
         ("Yazı tipi", [("L", "fontimport"), ("S", "tstyle")]),
     ]),
     ("Açıklama", [

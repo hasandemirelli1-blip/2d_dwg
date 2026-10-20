@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineE
 from t2dcad import engine
 from t2dcad.cmdnames import DESCRIPTIONS, POPULAR
 from t2dcad.engine import GetString
+from t2dcad.i18n import tr
 
 
 def suggestions(prefix: str, limit: int = 14) -> list[tuple[str, str]]:
@@ -55,7 +56,7 @@ class CompletionPopup(QListWidget):
             self.hide()
             return
         for word, cmd in items:
-            desc = DESCRIPTIONS.get(cmd, "")
+            desc = tr(DESCRIPTIONS.get(cmd, ""))
             label = f"{word:<10} {cmd if word != cmd else '':<14} {desc}"
             it = QListWidgetItem(label.rstrip())
             it.setData(Qt.UserRole, word)
@@ -129,11 +130,11 @@ class CommandLine(QWidget):
 
     # ------------------------------------------------------------ output
     def add_history(self, text: str):
-        self.history.appendPlainText(text)
+        self.history.appendPlainText(tr(text))
         self.history.moveCursor(QTextCursor.End)
 
     def set_prompt(self, text: str):
-        self.prompt.setText(text)
+        self.prompt.setText(tr(text))
 
     def show_history_window(self):
         dlg = QDialog(self.main)

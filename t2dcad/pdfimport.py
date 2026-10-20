@@ -179,6 +179,8 @@ class PdfImporter:
         return a
 
     def _add(self, e, kind):
+        from t2dcad.i18n import tr
+        kind = tr(kind)
         self.result.entities.append(e)
         self.result.counts[kind] = self.result.counts.get(kind, 0) + 1
 

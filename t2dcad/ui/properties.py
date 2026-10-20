@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (QWidget, QVBoxLayout, QFormLayout, QComboBox, QLi
 
 from t2dcad import geom
 from t2dcad.engine import fmt
+from t2dcad.i18n import tr
 from t2dcad.ui.widgets import ColorCombo, LinetypeCombo, LineweightCombo
 
 TYPE_NAMES = {
@@ -56,16 +57,16 @@ class PropertiesPanel(QWidget):
         ents = tab.ctx.entities(tab.canvas.selection)
         self._ents = ents
         if not ents:
-            self.header.addItem("Seçim yok")
+            self.header.addItem(tr("Seçim yok"))
             self._build_general(None)
             self._lay.addStretch(1)
             self._fit()
             return
         types = sorted({e.dxftype() for e in ents})
         if len(types) == 1:
-            self.header.addItem(f"{TYPE_NAMES.get(types[0], types[0])} ({len(ents)})")
+            self.header.addItem(f"{tr(TYPE_NAMES.get(types[0], types[0]))} ({len(ents)})")
         else:
-            self.header.addItem(f"Tümü ({len(ents)})")
+            self.header.addItem(tr(f"Tümü ({len(ents)})"))
         self._build_general(ents)
         if len(ents) == 1:
             self._build_geometry(ents[0])

@@ -88,12 +88,13 @@ noktadan o mesafede oluşur. İki izleme çizgisinin kesişimine de yakalanır.
 | Grup | Komutlar (kısaltma) |
 |---|---|
 | Çizim | LINE (L), PLINE (PL), CIRCLE (C), ARC (A), RECTANG (REC), POLYGON (POL), ELLIPSE (EL), POINT (PO), XLINE (XL), RAY, DONUT (DO), TEXT (DT), MTEXT (T/MT), HATCH (H), BLOCK (B), INSERT (I) |
-| Değiştirme | ERASE (E), MOVE (M), COPY (CO/CP), ROTATE (RO), SCALE (SC), MIRROR (MI), OFFSET (O), TRIM (TR), EXTEND (EX), FILLET (F), CHAMFER (CHA), BREAK (BR), BREAKATPOINT (BRP), JOIN (J), EXPLODE (X), STRETCH (S), ARRAY (AR), LENGTHEN (LEN), MATCHPROP (MA), TEXTEDIT (ED), PROPERTIES (PR / Ctrl+1) |
+| Değiştirme | ERASE (E), MOVE (M), COPY (CO/CP), ROTATE (RO), SCALE (SC), MIRROR (MI), OFFSET (O), TRIM (TR), EXTEND (EX), FILLET (F), CHAMFER (CHA), BREAK (BR), BREAKATPOINT (BRP), ALIGN (AL), JOIN (J), EXPLODE (X), STRETCH (S), ARRAY (AR), LENGTHEN (LEN), MATCHPROP (MA), TEXTEDIT (ED), PROPERTIES (PR / Ctrl+1) |
 | Ölçülendirme | DIMLINEAR (DLI), DIMALIGNED (DAL), DIMANGULAR (DAN), DIMRADIUS (DRA), DIMDIAMETER (DDI), DIMCONTINUE (DCO), DIMBASELINE (DBA), QLEADER (LE), DIMSTYLE (D) |
 | Görünüm | ZOOM (Z: E/W/P/A/C/S), ZE, ZW, ZP, PAN (P), REGEN (RE) |
 | Sorgulama | DIST (DI), AREA (AA), ID, LIST (LI) |
 | Katman | LAYER (LA), LAYOFF, LAYON, LAYFRZ, LAYTHW, LAYLCK, LAYULK, LAYISO, LAYUNISO, LAYMCUR, LAYMCH |
 | Dosya | NEW, OPEN, QSAVE, SAVEAS, PLOT (Ctrl+P), EXPORTPDF, CLOSE, QUIT |
+| Resim | IMAGEATTACH (IAT/IM): PNG/JPG/BMP resim ekleme (sürükle-bırak da olur) |
 | Yazı | STYLE (ST): yazı stili ve yazı tipi seçimi, FONTIMPORT: yazı tipi içe aktarma |
 | Diğer | U, REDO, OSNAP (OS/DS), OPTIONS (OP), LTSCALE (LTS), PURGE (PU), COPYCLIP, PASTECLIP, HELP |
 
@@ -110,7 +111,21 @@ noktadan o mesafede oluşur. İki izleme çizgisinin kesişimine de yakalanır.
   ve TrueType yazılar **düzenlenebilir nesneler** olarak gelir. Renkler, çizgi kalınlıkları ve kesikli çizgiler korunur.
 * Ölçek: 1 = kağıt üzerindeki gerçek boyut (mm). Çizim 1:50 çizdirildiyse 50 yazın, gerçek ölçüler gelir.
 * Katmanlar: nesne türüne göre (PDF_Geometri / PDF_Dolgu / PDF_Yazi), PDF'nin kendi katmanları veya geçerli katman.
-* Raster resimler ve SHX yazıların metne dönüştürülmesi desteklenmez (SHX yazılar çizgi olarak gelir).
+* PDF içindeki resimler (antetteki logolar vb.) PNG olarak `<pdf adı>_resimler` klasörüne çıkarılır ve PDF_Resim katmanına yerleştirilir.
+* SHX yazıların metne dönüştürülmesi desteklenmez (SHX yazılar çizgi olarak gelir).
+
+### Resim ekleme ve hizalama (IMAGEATTACH, ALIGN)
+* `IMAGEATTACH` (IAT): eklenecek noktayı, ölçeği (genişlik) ve açıyı verin. Resim her zaman çizgilerin arkasında kalır.
+* Resmi çizime oturtmak için `ALIGN` (AL): resmi seçin, resimdeki 2 noktayı çizimdeki karşılıklarına gösterin, ölçeklensin mi sorusuna Yes deyin.
+* Özellikler panelinde resmin dosyası, konumu, genişliği ve dönmesi değiştirilebilir.
+
+### BREAK (BR) – AutoCAD gibi
+* Nesneyi seçtiğiniz nokta 1. kırma noktasıdır; 2. noktayı gösterin (nesne dışında da olabilir, nesneye izdüşürülür).
+* `F` (İlk nokta): 1. noktayı yeniden seçer. `@`: aynı noktadan ikiye böler (BREAKATPOINT gibi).
+* Daire ve kapalı polyline'larda saatin tersi yönündeki parça silinir. Çizgi, yay, daire, elips, polyline desteklenir.
+
+### Dil / Language
+* Görünüm menüsü > **Dil / Language** veya Seçenekler (OPTIONS) > Dil: Türkçe veya English. Program yeniden açıldığında geçerli olur.
 
 ### Özellikler paneli (Ctrl+1)
 * Yazılarda stil, **yazı tipi**, yükseklik, dönme, genişlik faktörü, eğiklik, hizalama.

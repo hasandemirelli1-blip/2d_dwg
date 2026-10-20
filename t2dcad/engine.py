@@ -241,8 +241,9 @@ class CommandManager:
     def prompt_text(self) -> str:
         if not self.req:
             return "Komut:"
+        from t2dcad.i18n import tr
         r = self.req
-        txt = r.prompt + r.keyword_prompt()
+        txt = tr(r.prompt) + r.keyword_prompt()
         if r.default is not None and not isinstance(r, GetSelection):
             d = r.default
             if isinstance(d, float):
@@ -258,6 +259,7 @@ class CommandManager:
             txt = "Orta noktanın ilk noktası:"
         elif self._special == "m2p2":
             txt = "Orta noktanın ikinci noktası:"
+        txt = tr(txt) if self._special or self._dist_first is not None else txt
         return txt + ":" if not txt.endswith(":") else txt
 
     # ------------------------------------------------------------ control

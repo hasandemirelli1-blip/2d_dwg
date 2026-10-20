@@ -8,6 +8,7 @@ from PySide6.QtGui import (QPainter, QColor, QPixmap, QIcon, QLinearGradient, QF
                            QPolygonF)
 
 from t2dcad import APP_NAME, __version__
+from t2dcad.i18n import tr
 
 BLUE = QColor(47, 98, 153)       # TDD Technic blue
 BLUE_DARK = QColor(31, 66, 108)
@@ -214,11 +215,11 @@ def splash_pixmap(w: int = 720, h: int = 420, scale: float = 2.0, progress: floa
     p.setFont(f)
     p.setPen(NAVY)
     p.drawText(QRectF(tb.left() + 8, tb.top(), tb.width() - 16, 26), Qt.AlignVCenter | Qt.AlignLeft,
-               f"{APP_NAME}  ·  2B Teknik Çizim")
+               tr(f"{APP_NAME}  ·  2B Teknik Çizim"))
     f.setBold(False)
     f.setPixelSize(10)
     p.setFont(f)
-    p.drawText(QRectF(tb.left() + 8, tb.top() + 26, 117, 36), Qt.AlignVCenter, f"Sürüm {__version__}")
+    p.drawText(QRectF(tb.left() + 8, tb.top() + 26, 117, 36), Qt.AlignVCenter, tr(f"Sürüm {__version__}"))
     p.drawText(QRectF(tb.left() + 133, tb.top() + 26, 110, 36), Qt.AlignVCenter, f"© 2026 {APP_NAME}")
     # left: identity
     draw_logo(p, QRectF(44, 70, 92, 92))
@@ -227,13 +228,13 @@ def splash_pixmap(w: int = 720, h: int = 420, scale: float = 2.0, progress: floa
     f.setPixelSize(15)
     p.setFont(f)
     p.setPen(QColor(85, 98, 115))
-    p.drawText(QPointF(46, 256), "DWG / DXF çizim ve düzenleme")
+    p.drawText(QPointF(46, 256), tr("DWG / DXF çizim ve düzenleme"))
     p.fillRect(QRectF(46, 274, 54, 3), ORANGE)
     f.setPixelSize(12)
     p.setFont(f)
     p.setPen(QColor(105, 116, 130))
-    for i, t in enumerate(("Çizim ve düzenleme", "Ölçülendirme ve yazı", "Katmanlar ve bloklar",
-                           "Yazıcı ve PDF çıktısı")):
+    for i, t in enumerate(tr(x) for x in ("Çizim ve düzenleme", "Ölçülendirme ve yazı", "Katmanlar ve bloklar",
+                                          "Yazıcı ve PDF çıktısı")):
         y = 300 + i * 19
         p.setBrush(BLUE)
         p.setPen(Qt.NoPen)

@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QDockWidge
 from ezdxf.math import Vec2
 
 from t2dcad import APP_NAME, __version__, settings
+from t2dcad.i18n import tr
 from t2dcad import commands  # noqa: F401  (registers commands)
 from t2dcad.docmodel import CadDocument, FileError, OdaMissing, DWG_VERSIONS
 from t2dcad.doctab import DocumentTab
@@ -106,6 +107,9 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         self.set_ui_mode(settings.get("ui_mode", "ribbon"), quiet=True)
+        from t2dcad import i18n
+        if i18n.lang() == "en":
+            i18n.translate_tree(self)
         self.cmdline.add_history(f"{APP_NAME} {__version__} - AutoCAD benzeri 2B çizim. Yardım için F1.")
 
     # ------------------------------------------------------------ helpers
@@ -131,6 +135,7 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------ UI build
     def _act(self, key, text, cmd=None, ic=None, shortcut=None, slot=None, checkable=False):
+        text = tr(text)
         a = QAction(text, self)
         if ic:
             a.setIcon(icon(ic))
@@ -195,6 +200,7 @@ class MainWindow(QMainWindow):
         m.addAction(self.cmd_dock.toggleViewAction())
         m.addAction(A("startpage", "Başlangıç sayfası", None, None, None, self.show_start_page))
         m.addSeparator()
+        m.addAction(A("language", "Dil / Language", None, None, None, self.choose_language))
         m.addAction(A("ribbonmode", "Şerit menü (Ribbon)", None, None, None, lambda: self.set_ui_mode("ribbon")))
         m.addAction(A("classic", "Klasik menü", None, None, None, lambda: self.set_ui_mode("classic")))
         A("cmdtoggle", "Komut satırı", None, None, None,
@@ -466,7 +472,7 @@ class MainWindow(QMainWindow):
         tab = DocumentTab(self, cad_doc)
         if not cad_doc.path:
             self._untitled += 1
-            tab.untitled_name = f"Çizim{self._untitled}.dwg"
+            tab.untitled_name = tr(f"Çizim{self._untitled}.dwg")
         else:
             tab.untitled_name = ""
         tab.canvas.cursor_moved.connect(self._cursor_moved)
@@ -566,7 +572,7 @@ class MainWindow(QMainWindow):
         keys = []
         for ext in ("dwg", "dxf"):
             for ver, txt in DWG_VERSIONS.items():
-                filters.append(SAVE_FILTERS[ext].format(ver=txt.split("/")[0].replace("AutoCAD ", "")))
+                filters.append(tr(SAVE_FILTERS[ext]).format(ver=txt.split("/")[0].replace("AutoCAD ", "")))
                 keys.append((ext, ver))
         cur_ext = "dwg" if (not tab.doc.path or tab.doc.file_format == "dwg") else "dxf"
         cur_ver = tab.doc.save_version if tab.doc.save_version in DWG_VERSIONS else "R2018"
@@ -913,7 +919,7 @@ class MainWindow(QMainWindow):
         dlg.resize(820, 640)
         v = QVBoxLayout(dlg)
         b = QTextBrowser()
-        b.setHtml(HELP_HTML)
+        b.setHtml(tr(HELP_HTML))
         v.addWidget(b)
         bb = QDialogButtonBox(QDialogButtonBox.Close)
         bb.rejected.connect(dlg.reject)
@@ -943,6 +949,19 @@ class MainWindow(QMainWindow):
             return None, None
         settings.set("last_dir", os.path.dirname(dlg.path.text()))
         return dlg.options(), dlg.path.text()
+
+    def choose_language(self):
+        from t2dcad import i18n
+        names = [n for c, n in i18n.LANGUAGES]
+        cur = [c for c, n in i18n.LANGUAGES].index(i18n.lang()) if i18n.lang() in ("tr", "en") else 0
+        name, ok = QInputDialog.getItem(self, "Dil / Language", "Arayüz dili / Interface language:", names, cur, False)
+        if not ok:
+            return
+        code = i18n.LANGUAGES[names.index(name)][0]
+        i18n.set_language(code)
+        QMessageBox.information(self, "Dil / Language",
+                                "Dil değişikliği programı yeniden başlattığınızda uygulanır.\n"
+                                "The language change is applied when you restart the program.")
 
     def text_style_dialog(self):
         tab = self.current_tab()
@@ -1127,7 +1146,7 @@ class Splash(QSplashScreen):
         self.setPixmap(branding.splash_pixmap(progress=prog, message=self.text))
 
     def message(self, text):
-        self.text = text
+        self.text = tr(text)
         self._tick()
         QApplication.processEvents()
 
@@ -1144,6 +1163,8 @@ def main():
     app.setOrganizationName("T2D")
     app.setWindowIcon(branding.logo_icon())
     apply_dark_theme(app)
+    from t2dcad import i18n
+    i18n.install(app)
     show_time = int(settings.get_float("splash_seconds", 5.0) * 1000)
     splash = Splash(show_time)
     splash.show()

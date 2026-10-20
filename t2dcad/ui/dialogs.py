@@ -116,6 +116,16 @@ class OptionsDialog(QDialog):
         f2.addRow("Izgara/Snap aralığı:", self.grid)
         v.addWidget(g2)
 
+        g0 = QGroupBox("Dil / Language")
+        f0 = QFormLayout(g0)
+        from t2dcad import i18n
+        self.language = QComboBox()
+        for code, name in i18n.LANGUAGES:
+            self.language.addItem(name, code)
+        self.language.setCurrentIndex(max(0, self.language.findData(i18n.lang())))
+        f0.addRow("Arayüz dili:", self.language)
+        v.addWidget(g0)
+
         g3 = QGroupBox("Kaydetme")
         f3 = QFormLayout(g3)
         self.bak = QCheckBox("Kaydederken yedek (.bak) oluştur")
@@ -154,6 +164,13 @@ class OptionsDialog(QDialog):
         settings.set("grid_unit", self.grid.value())
         settings.set("create_bak", self.bak.isChecked())
         settings.set("autosave_min", self.autosave.value())
+        from t2dcad import i18n
+        code = self.language.currentData()
+        if code != i18n.lang():
+            i18n.set_language(code)
+            QMessageBox.information(self, "Dil / Language",
+                                    "Dil değişikliği programı yeniden başlattığınızda uygulanır.\n"
+                                    "The language change is applied when you restart the program.")
 
 
 class MTextDialog(QDialog):

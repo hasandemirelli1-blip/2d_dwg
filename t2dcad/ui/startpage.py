@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (QWidget, QHBoxLayout, QVBoxLayout, QLabel, QPushB
 
 from t2dcad import settings, APP_NAME, __version__
 from t2dcad.ui import branding
+from t2dcad.i18n import tr
 
 
 def thumb_dir() -> Path:
@@ -168,11 +169,11 @@ class StartPage(QWidget):
         from t2dcad.docmodel import find_oda_converter
         oda = find_oda_converter()
         if oda:
-            self.dwg_label.setText('<span style="color:#7fd17f;">● DWG desteği hazır</span>')
+            self.dwg_label.setText(tr('<span style="color:#7fd17f;">● DWG desteği hazır</span>'))
             self.dwg_btn.hide()
         else:
-            self.dwg_label.setText('<span style="color:#e8a060;">● DWG desteği kurulu değil</span><br>'
-                                   '<span style="color:#9aa6b4;font-size:8pt;">DXF dosyaları yine açılır.</span>')
+            self.dwg_label.setText(tr('<span style="color:#e8a060;">● DWG desteği kurulu değil</span><br>'
+                                      '<span style="color:#9aa6b4;font-size:8pt;">DXF dosyaları yine açılır.</span>'))
             self.dwg_btn.show()
         body = QWidget()
         grid = QGridLayout(body)

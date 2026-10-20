@@ -12,6 +12,7 @@ from PySide6.QtGui import (QPainter, QColor, QPen, QImage, QTransform, QPainterP
 from PySide6.QtWidgets import QWidget, QMenu
 
 from t2dcad import geom, settings
+from t2dcad.i18n import tr
 from t2dcad.engine import (GetPoint, GetDistance, GetAngle, GetSelection, GetEntity, fmt)
 from t2dcad.geom import END, MID, CEN, QUA, INT, PER, NEA, NOD, INS, TAN, Seg, Arc
 from t2dcad.grips import entity_grips
@@ -596,11 +597,11 @@ class CadCanvas(QWidget):
         mode = self._cursor_mode()
         if mode == "point":
             if self.snap_hit:
-                lines.append(geom.SNAP_NAMES.get(self.snap_hit[0], self.snap_hit[0]))
+                lines.append(tr(geom.SNAP_NAMES.get(self.snap_hit[0], self.snap_hit[0])))
             elif self.track_align:
                 a, u = self.track_align
                 dd = self.cursor_world.distance(a)
-                lines.append(f"Nesne izleme: {fmt(dd, 3)} < {fmt(math.degrees(u.angle) % 360, 2)}°")
+                lines.append(tr(f"Nesne izleme: {fmt(dd, 3)} < {fmt(math.degrees(u.angle) % 360, 2)}°"))
             base = self.manager.rubber_base
             if base is not None:
                 d = self.cursor_world - base

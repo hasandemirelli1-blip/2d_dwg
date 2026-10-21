@@ -403,6 +403,307 @@ _DRAW = {
 }
 
 
+# ---------------------------------------------------------------- more icons
+def _layers_base(p, dim=False):
+    for i, c in enumerate((ACC, GRN, YEL)):
+        _pen(p, QColor(130, 135, 140) if dim else c, 1.3)
+        y = 9 + i * 4
+        p.drawPolygon(QPolygonF([_P(9, y - 3), _P(17, y + 1), _P(9, y + 5), _P(1, y + 1)]))
+
+
+def _badge(p, kind):
+    """Small status badge drawn on the right of layer icons."""
+    p.save()
+    if kind == "check":
+        _pen(p, GRN, 2.2)
+        p.drawPolyline(QPolygonF([_P(14, 6), _P(17, 9), _P(23, 2)]))
+    elif kind in ("bulb", "bulboff"):
+        on = kind == "bulb"
+        _pen(p, YEL if on else QColor(140, 140, 140), 1.3)
+        p.setBrush(YEL if on else Qt.NoBrush)
+        p.drawEllipse(QRectF(16, 1, 7, 7))
+        p.setBrush(Qt.NoBrush)
+        p.drawLine(_P(18, 9), _P(21, 9))
+        if not on:
+            _pen(p, RED, 1.6)
+            p.drawLine(_P(15, 1), _P(23, 9))
+    elif kind in ("lock", "unlock"):
+        _pen(p, YEL, 1.3)
+        p.drawRect(QRectF(16, 5, 7, 5))
+        if kind == "lock":
+            p.drawArc(QRectF(17, 1, 5, 7), 0, 180 * 16)
+        else:
+            p.drawArc(QRectF(19, 0, 5, 7), 0, 180 * 16)
+    elif kind in ("freeze", "thaw"):
+        _pen(p, QColor(140, 200, 255) if kind == "freeze" else YEL, 1.3)
+        for a in (0, 60, 120):
+            v = math.radians(a)
+            p.drawLine(_P(19.5 - 4 * math.cos(v), 5 - 4 * math.sin(v)), _P(19.5 + 4 * math.cos(v), 5 + 4 * math.sin(v)))
+    elif kind == "iso":
+        _pen(p, ACC, 1.6)
+        p.drawEllipse(QRectF(15, 1, 8, 8))
+        _dot(p, 19, 5, ACC)
+    elif kind == "uniso":
+        _pen(p, ACC, 1.6, Qt.DashLine)
+        p.drawEllipse(QRectF(15, 1, 8, 8))
+    elif kind == "arrow":
+        _pen(p, GRN, 1.8)
+        p.drawLine(_P(14, 5), _P(22, 5))
+        p.drawPolyline(QPolygonF([_P(19, 2), _P(22, 5), _P(19, 8)]))
+    p.restore()
+
+
+def _layer_icon(kind, dim=False):
+    def f(p):
+        _layers_base(p, dim)
+        _badge(p, kind)
+    return f
+
+
+def d_brp(p):
+    p.drawLine(_P(2, 12), _P(22, 12))
+    _dot(p, 12, 12, RED)
+    _pen(p, RED, 1.2)
+    p.drawLine(_P(12, 5), _P(12, 19))
+
+
+def d_align(p):
+    p.drawRect(QRectF(3, 11, 9, 9))
+    _pen(p, ACC)
+    p.drawPolygon(QPolygonF([_P(14, 2), _P(22, 5), _P(19, 13), _P(11, 10)]))
+    _pen(p, GRN, 1.2, Qt.DashLine)
+    p.drawLine(_P(12, 11), _P(11, 10))
+    p.drawLine(_P(3, 11), _P(14, 2))
+
+
+def d_area(p):
+    p.setBrush(QColor(90, 170, 255, 70))
+    p.drawPolygon(QPolygonF([_P(3, 19), _P(6, 5), _P(16, 3), _P(21, 13), _P(13, 21)]))
+
+
+def d_list(p):
+    p.drawRect(QRectF(4, 3, 16, 18))
+    _pen(p, ACC, 1.3)
+    for y in (8, 12, 16):
+        p.drawLine(_P(7, y), _P(17, y))
+
+
+def d_id(p):
+    p.drawLine(_P(12, 4), _P(12, 20))
+    p.drawLine(_P(4, 12), _P(20, 12))
+    _dot(p, 12, 12, YEL)
+    p.setFont(QFont("Arial", 5, QFont.Bold))
+    p.drawText(QRectF(13, 1, 11, 8), Qt.AlignCenter, "XY")
+
+
+def d_selall(p):
+    _pen(p, GRN, 1.2, Qt.DashLine)
+    p.drawRect(QRectF(2, 2, 20, 20))
+    _pen(p, FG)
+    p.drawLine(_P(5, 18), _P(11, 6))
+    p.drawEllipse(QRectF(12, 11, 7, 7))
+
+
+def d_paste(p):
+    p.drawRect(QRectF(4, 4, 14, 18))
+    _pen(p, YEL)
+    p.drawRect(QRectF(8, 2, 6, 4))
+    _pen(p, ACC)
+    p.drawRect(QRectF(10, 10, 11, 12))
+
+
+def d_copyclip(p):
+    p.drawRect(QRectF(3, 3, 12, 14))
+    _pen(p, ACC)
+    p.drawRect(QRectF(9, 8, 12, 14))
+
+
+def d_copybase(p):
+    d_copyclip(p)
+    _dot(p, 9, 22, YEL)
+
+
+def d_cut(p):
+    p.drawEllipse(QRectF(3, 15, 6, 6))
+    p.drawEllipse(QRectF(15, 15, 6, 6))
+    p.drawLine(_P(8, 16), _P(17, 3))
+    p.drawLine(_P(16, 16), _P(7, 3))
+
+
+def d_tstyle(p):
+    p.setFont(QFont("Times New Roman", 12, QFont.Bold))
+    p.drawText(QRectF(0, 0, 16, 18), Qt.AlignCenter, "A")
+    _pen(p, ACC, 1.3)
+    p.drawLine(_P(14, 14), _P(22, 14))
+    p.drawLine(_P(14, 18), _P(22, 18))
+    p.drawLine(_P(14, 22), _P(22, 22))
+
+
+def d_dimstyle(p):
+    p.drawLine(_P(3, 4), _P(3, 14))
+    p.drawLine(_P(21, 4), _P(21, 14))
+    _pen(p, ACC)
+    p.drawLine(_P(3, 9), _P(21, 9))
+    _pen(p, YEL, 1.3)
+    p.drawLine(_P(6, 18), _P(18, 18))
+    p.drawLine(_P(6, 22), _P(18, 22))
+
+
+def d_dimdiameter(p):
+    p.drawEllipse(QRectF(3, 3, 18, 18))
+    _pen(p, ACC)
+    p.drawLine(_P(6, 18), _P(18, 6))
+
+
+def d_dimcontinue(p):
+    for x in (2, 12, 22):
+        p.drawLine(_P(x, 8), _P(x, 20))
+    _pen(p, ACC)
+    p.drawLine(_P(2, 12), _P(22, 12))
+
+
+def d_dimbaseline(p):
+    for x in (2, 12, 22):
+        p.drawLine(_P(x, 4), _P(x, 22))
+    _pen(p, ACC)
+    p.drawLine(_P(2, 10), _P(12, 10))
+    p.drawLine(_P(2, 17), _P(22, 17))
+
+
+def d_lengthen(p):
+    p.drawLine(_P(2, 16), _P(14, 8))
+    _pen(p, ACC, 1.4, Qt.DashLine)
+    p.drawLine(_P(14, 8), _P(22, 3))
+
+
+def d_image(p):
+    p.drawRect(QRectF(2, 4, 20, 16))
+    _pen(p, GRN)
+    p.drawPolyline(QPolygonF([_P(4, 18), _P(10, 11), _P(14, 15), _P(17, 12), _P(21, 17)]))
+    _pen(p, YEL)
+    p.drawEllipse(QRectF(14, 6, 4, 4))
+
+
+def d_pdfimport(p):
+    p.drawPolygon(QPolygonF([_P(5, 2), _P(15, 2), _P(19, 6), _P(19, 22), _P(5, 22)]))
+    p.setPen(RED)
+    p.setFont(QFont("Arial", 5, QFont.Bold))
+    p.drawText(QRectF(5, 7, 14, 8), Qt.AlignCenter, "PDF")
+    _pen(p, ACC, 1.8)
+    p.drawLine(_P(12, 15), _P(12, 21))
+    p.drawPolyline(QPolygonF([_P(9, 18), _P(12, 21), _P(15, 18)]))
+
+
+def d_refedit(p):
+    d_block(p)
+    _pen(p, YEL, 2)
+    p.drawLine(_P(13, 21), _P(22, 12))
+
+
+def d_circle2p(p):
+    p.drawEllipse(QRectF(4, 4, 16, 16))
+    _dot(p, 4, 12)
+    _dot(p, 20, 12)
+
+
+def d_circle3p(p):
+    p.drawEllipse(QRectF(4, 4, 16, 16))
+    _dot(p, 12, 4)
+    _dot(p, 5, 16)
+    _dot(p, 19, 16)
+
+
+def d_circlettr(p):
+    p.drawEllipse(QRectF(7, 3, 12, 12))
+    _pen(p, ACC)
+    p.drawLine(_P(2, 15), _P(22, 15))
+    p.drawLine(_P(7, 2), _P(7, 22))
+
+
+def d_circlecd(p):
+    p.drawEllipse(QRectF(4, 4, 16, 16))
+    _pen(p, ACC)
+    p.drawLine(_P(4, 12), _P(20, 12))
+    _dot(p, 12, 12)
+
+
+def d_arccse(p):
+    p.drawArc(QRectF(4, 4, 16, 16), 0, 120 * 16)
+    _pen(p, ACC, 1)
+    p.drawLine(_P(12, 12), _P(20, 12))
+    _dot(p, 12, 12)
+    _dot(p, 20, 12)
+    _dot(p, 8, 5.1)
+
+
+def d_ray(p):
+    p.drawLine(_P(4, 20), _P(23, 1))
+    _dot(p, 4, 20)
+
+
+def d_donut(p):
+    p.setBrush(QColor(225, 228, 232, 90))
+    path_outer = QRectF(3, 3, 18, 18)
+    p.drawEllipse(path_outer)
+    p.setBrush(QColor(43, 49, 57))
+    p.drawEllipse(QRectF(8, 8, 8, 8))
+
+
+def d_regen(p):
+    p.drawArc(QRectF(4, 4, 16, 16), 40 * 16, 260 * 16)
+    p.setBrush(FG)
+    p.drawPolygon(QPolygonF([_P(18, 4), _P(19, 10), _P(13, 8)]))
+
+
+def d_options(p):
+    for a in range(0, 360, 45):
+        v = math.radians(a)
+        p.drawLine(_P(12 + 6 * math.cos(v), 12 + 6 * math.sin(v)), _P(12 + 9.5 * math.cos(v), 12 + 9.5 * math.sin(v)))
+    p.drawEllipse(QRectF(6, 6, 12, 12))
+    _pen(p, ACC)
+    p.drawEllipse(QRectF(10, 10, 4, 4))
+
+
+def d_help(p):
+    p.drawEllipse(QRectF(2, 2, 20, 20))
+    p.setFont(QFont("Arial", 11, QFont.Bold))
+    p.drawText(QRectF(0, 0, 24, 24), Qt.AlignCenter, "?")
+
+
+def d_pdf(p):
+    p.drawPolygon(QPolygonF([_P(5, 2), _P(15, 2), _P(19, 6), _P(19, 22), _P(5, 22)]))
+    p.setPen(RED)
+    p.setFont(QFont("Arial", 6, QFont.Bold))
+    p.drawText(QRectF(4, 8, 16, 10), Qt.AlignCenter, "PDF")
+
+
+def d_saveas(p):
+    d_save(p)
+    _pen(p, YEL, 2)
+    p.drawLine(_P(14, 22), _P(23, 13))
+
+
+def d_purge(p):
+    p.drawPolygon(QPolygonF([_P(6, 8), _P(18, 8), _P(16, 22), _P(8, 22)]))
+    p.drawLine(_P(4, 6), _P(20, 6))
+    p.drawLine(_P(10, 3), _P(14, 3))
+
+
+_DRAW.update({
+    "brp": d_brp, "align": d_align, "area": d_area, "list": d_list, "id": d_id, "selall": d_selall,
+    "paste": d_paste, "copyclip": d_copyclip, "copybase": d_copybase, "cut": d_cut, "tstyle": d_tstyle,
+    "dimstyle": d_dimstyle, "dimdiameter": d_dimdiameter, "dimcontinue": d_dimcontinue,
+    "dimbaseline": d_dimbaseline, "lengthen": d_lengthen, "image": d_image, "pdfimport": d_pdfimport,
+    "refedit": d_refedit, "circle2p": d_circle2p, "circle3p": d_circle3p, "circlettr": d_circlettr,
+    "circlecd": d_circlecd, "arccse": d_arccse, "ray": d_ray, "donut": d_donut, "regen": d_regen,
+    "options": d_options, "help": d_help, "pdf": d_pdf, "saveas": d_saveas, "purge": d_purge,
+    "laymcur": _layer_icon("check"), "layoff": _layer_icon("bulboff"), "layon": _layer_icon("bulb"),
+    "layiso": _layer_icon("iso"), "layuniso": _layer_icon("uniso"), "layfrz": _layer_icon("freeze"),
+    "laythw": _layer_icon("thaw"), "laylck": _layer_icon("lock"), "layulk": _layer_icon("unlock"),
+    "laymch": _layer_icon("arrow"),
+})
+
+
 def color_icon(color: QColor, size=14) -> QIcon:
     pm = QPixmap(size, size)
     pm.fill(Qt.transparent)

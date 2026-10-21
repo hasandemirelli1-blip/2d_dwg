@@ -8,8 +8,8 @@ from ezdxf.enums import TextEntityAlignment
 
 from t2dcad import geom
 from t2dcad.engine import (command, GetPoint, GetDistance, GetAngle, GetNumber, GetString,
-                           GetKeyword, Cancel, fmt)
-from t2dcad.geom import Seg, Arc
+                           GetKeyword, GetEntity, Cancel, fmt)
+from t2dcad.geom import Seg, Arc, TAU
 
 
 def _arc_prim(c: Vec2, r: float, a0: float, a1: float) -> Arc:
@@ -166,12 +166,21 @@ def circle(ctx):
                             preview=lambda p: [("circle", p1.lerp(p), p1.distance(p) / 2)])
         center, r = p1.lerp(p2), p1.distance(p2) / 2
     elif c == "Ttr":
-        ctx.print("TTR henüz desteklenmiyor, merkez-yarıçap kullanın.")
-        return
+        types = ("LINE", "ARC", "CIRCLE", "LWPOLYLINE", "XLINE", "RAY")
+        e1, q1 = yield GetEntity("Çemberin ilk teğeti için nesne üzerinde nokta belirtin", types=types)
+        e2, q2 = yield GetEntity("Çemberin ikinci teğeti için nesne üzerinde nokta belirtin", types=types)
+        r = yield GetDistance("Çemberin yarıçapını belirtin", default=r0)
+        center = _ttr_center(e1, Vec2(q1), e2, Vec2(q2), r) if r > 0 else None
+        if center is None:
+            ctx.print("Bu yarıçapla teğet çember yok.")
+            return
     else:
         center = c
-        r = yield GetDistance("Yarıçapı belirtin", base=center, keywords=("Diameter",), default=r0,
-                              preview=lambda p: [("circle", center, center.distance(p)), ("line", center, p)])
+        diameter = ctx.get("circle_diameter_once", False)
+        ctx.set("circle_diameter_once", False)
+        r = "Diameter" if diameter else (
+            yield GetDistance("Yarıçapı belirtin", base=center, keywords=("Diameter",), default=r0,
+                              preview=lambda p: [("circle", center, center.distance(p)), ("line", center, p)]))
         if r == "Diameter":
             d = yield GetDistance("Çapı belirtin", base=center, default=r0 * 2,
                                   preview=lambda p: [("circle", center, center.distance(p) / 2)])
@@ -181,6 +190,35 @@ def circle(ctx):
         return
     ctx.set("circle_r", r)
     ctx.created(ctx.msp.add_circle(center, r, dxfattribs=ctx.attribs()))
+
+
+def _ttr_center(e1, q1: Vec2, e2, q2: Vec2, r: float):
+    """Center of the circle with radius r tangent to the two entities, nearest
+    to the picked points (like AutoCAD TTR)."""
+    def prim_near(e, q):
+        prims = geom.entity_prims(e)
+        return min(prims, key=lambda pr: pr.nearest(q).distance(q)) if prims else None
+
+    def offsets(pr):
+        if isinstance(pr, Arc):
+            return [Arc(pr.c, rr, 0, TAU, full=True) for rr in (pr.r + r, pr.r - r) if rr > 1e-9]
+        d = pr.b - pr.a
+        if d.magnitude < 1e-12:
+            return []
+        n = Vec2(-d.y, d.x).normalize(r)
+        return [Seg(pr.a + n, pr.b + n), Seg(pr.a - n, pr.b - n)]
+
+    p1, p2 = prim_near(e1, q1), prim_near(e2, q2)
+    if p1 is None or p2 is None:
+        return None
+    best, best_d = None, float("inf")
+    for o1 in offsets(p1):
+        for o2 in offsets(p2):
+            for c in geom.intersect(o1, o2, True, True):
+                d = p1.nearest(c, True).distance(q1) + p2.nearest(c, True).distance(q2)
+                if d < best_d:
+                    best, best_d = c, d
+    return best
 
 
 # ---------------------------------------------------------------- ARC

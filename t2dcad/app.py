@@ -131,7 +131,14 @@ class MainWindow(QMainWindow):
                 self.file_new() if cmd == "NEW" else self.file_open()
             return
         t.canvas.setFocus()
-        t.manager.start(cmd)
+        # "CIRCLE 2P": the command is started and its option entered (ribbon drop-downs)
+        name, *opts = cmd.split()
+        if name == "CIRCLE" and opts == ["D"]:
+            t.manager.ctx.set("circle_diameter_once", True)
+            opts = []
+        if t.manager.start(name):
+            for o in opts:
+                t.manager.text_input(o)
 
     # ------------------------------------------------------------ UI build
     def _act(self, key, text, cmd=None, ic=None, shortcut=None, slot=None, checkable=False):
@@ -166,12 +173,12 @@ class MainWindow(QMainWindow):
         self.recent_menu = m.addMenu("Son kullanılanlar")
         self._fill_recent()
         m.addAction(A("save", "&Kaydet", None, "save", "Ctrl+S", self.file_save))
-        m.addAction(A("saveas", "&Farklı kaydet...", None, None, "Ctrl+Shift+S", self.file_save_as))
+        m.addAction(A("saveas", "&Farklı kaydet...", None, "saveas", "Ctrl+Shift+S", self.file_save_as))
         m.addSeparator()
         m.addAction(A("plot", "&Çizdir / Yazdır...", "PLOT", "print", "Ctrl+P"))
-        m.addAction(A("pdf", "PDF olarak dışa aktar...", "EXPORTPDF"))
-        m.addAction(A("pdfimport", "PDF içe aktar...", "PDFIMPORT", "open"))
-        m.addAction(A("imageattach", "Resim ekle...", "IMAGEATTACH", "insert"))
+        m.addAction(A("pdf", "PDF olarak dışa aktar...", "EXPORTPDF", "pdf"))
+        m.addAction(A("pdfimport", "PDF içe aktar...", "PDFIMPORT", "pdfimport"))
+        m.addAction(A("imageattach", "Resim ekle...", "IMAGEATTACH", "image"))
         m.addSeparator()
         m.addAction(A("close", "Çizimi kapat", None, None, "Ctrl+F4",
                       lambda: self.close_tab(self.current_tab())))
@@ -181,12 +188,12 @@ class MainWindow(QMainWindow):
         m.addAction(A("undo", "Geri al", "U", "undo", "Ctrl+Z"))
         m.addAction(A("redo", "Yinele", "REDO", "redo", "Ctrl+Y"))
         m.addSeparator()
-        m.addAction(A("cut", "Kes", "CUTCLIP", None, "Ctrl+X"))
-        m.addAction(A("copyclip", "Kopyala", "COPYCLIP", None, "Ctrl+C"))
-        m.addAction(A("copybase", "Temel noktayla kopyala", "COPYBASE", None, "Ctrl+Shift+C"))
-        m.addAction(A("paste", "Yapıştır", "PASTECLIP", None, "Ctrl+V"))
+        m.addAction(A("cut", "Kes", "CUTCLIP", "cut", "Ctrl+X"))
+        m.addAction(A("copyclip", "Kopyala", "COPYCLIP", "copyclip", "Ctrl+C"))
+        m.addAction(A("copybase", "Temel noktayla kopyala", "COPYBASE", "copybase", "Ctrl+Shift+C"))
+        m.addAction(A("paste", "Yapıştır", "PASTECLIP", "paste", "Ctrl+V"))
         m.addSeparator()
-        m.addAction(A("selall", "Tümünü seç", "SELECTALL", None, "Ctrl+A"))
+        m.addAction(A("selall", "Tümünü seç", "SELECTALL", "selall", "Ctrl+A"))
         m.addAction(A("erase", "Sil", "ERASE", "erase"))
 
         m = mb.addMenu("&Görünüm")
@@ -194,7 +201,7 @@ class MainWindow(QMainWindow):
         m.addAction(A("zw", "Zoom Pencere", "ZW", "zoomwin"))
         m.addAction(A("zp", "Zoom Önceki", "ZP", "zoomprev"))
         m.addAction(A("pan", "Kaydır (Pan)", "PAN", "pan"))
-        m.addAction(A("regen", "Yeniden oluştur (Regen)", "REGEN"))
+        m.addAction(A("regen", "Yeniden oluştur (Regen)", "REGEN", "regen"))
         m.addSeparator()
         m.addAction(self.props_dock.toggleViewAction())
         m.addAction(self.cmd_dock.toggleViewAction())
@@ -209,23 +216,26 @@ class MainWindow(QMainWindow):
 
         m = mb.addMenu("&Biçim")
         m.addAction(A("layer", "Katman yöneticisi...", "LAYER", "layer"))
-        m.addAction(A("tstyle", "Yazı stili...", "STYLE", "text"))
-        m.addAction(A("dst", "Ölçü stili...", "DIMSTYLE", "dimlinear"))
+        m.addAction(A("tstyle", "Yazı stili...", "STYLE", "tstyle"))
+        m.addAction(A("dst", "Ölçü stili...", "DIMSTYLE", "dimstyle"))
         m.addAction(A("lts", "Çizgi tipi ölçeği", "LTSCALE"))
         m.addSeparator()
         m.addAction(A("fontimport", "Yazı tipi içe aktar...", None, "text", None, self.import_font))
-        A("laymcur", "Katmanı geçerli yap", "LAYMCUR", "layer")
-        A("layoff", "Katmanı kapat", "LAYOFF")
-        A("layon", "Tüm katmanları aç", "LAYON")
-        A("layiso", "Katmanı yalıt", "LAYISO")
+        for key, text, cmd in [("laymcur", "Katmanı geçerli yap", "LAYMCUR"), ("layoff", "Katmanı kapat", "LAYOFF"),
+                               ("layon", "Tüm katmanları aç", "LAYON"), ("layiso", "Katmanı yalıt", "LAYISO"),
+                               ("layuniso", "Yalıtmayı kaldır", "LAYUNISO"), ("layfrz", "Katmanı dondur", "LAYFRZ"),
+                               ("laythw", "Tüm katmanları çöz", "LAYTHW"), ("laylck", "Katmanı kilitle", "LAYLCK"),
+                               ("layulk", "Katman kilidini aç", "LAYULK"),
+                               ("laymch", "Nesneleri katmana taşı", "LAYMCH")]:
+            A(key, text, cmd, key)
 
         m = mb.addMenu("Çi&z")
         for key, text, cmd, ic in [
             ("line", "Çizgi", "LINE", "line"), ("pline", "Çoklu çizgi", "PLINE", "pline"),
-            ("xline", "Yapı çizgisi", "XLINE", "xline"), ("ray", "Işın", "RAY", None), (None,) * 4,
+            ("xline", "Yapı çizgisi", "XLINE", "xline"), ("ray", "Işın", "RAY", "ray"), (None,) * 4,
             ("circle", "Çember", "CIRCLE", "circle"), ("arc", "Yay", "ARC", "arc"),
             ("rect", "Dikdörtgen", "RECTANG", "rect"), ("polygon", "Çokgen", "POLYGON", "polygon"),
-            ("ellipse", "Elips", "ELLIPSE", "ellipse"), ("donut", "Halka", "DONUT", None),
+            ("ellipse", "Elips", "ELLIPSE", "ellipse"), ("donut", "Halka", "DONUT", "donut"),
             ("point", "Nokta", "POINT", "point"), (None,) * 4,
             ("hatch", "Tarama...", "HATCH", "hatch"), ("block", "Blok tanımla...", "BLOCK", "block"),
             ("insert", "Blok ekle...", "INSERT", "insert"), (None,) * 4,
@@ -236,12 +246,22 @@ class MainWindow(QMainWindow):
             else:
                 m.addAction(A(key, text, cmd, ic))
 
+        # variants used by the ribbon drop-downs (the command is started with its option)
+        for key, text, cmd, ic in [
+            ("circle_cr", "Merkez, yarıçap", "CIRCLE", "circle"), ("circle_cd", "Merkez, çap", "CIRCLE D", "circlecd"),
+            ("circle_2p", "2 nokta", "CIRCLE 2P", "circle2p"), ("circle_3p", "3 nokta", "CIRCLE 3P", "circle3p"),
+            ("circle_ttr", "Teğet, teğet, yarıçap", "CIRCLE T", "circlettr"),
+            ("arc_3p", "3 nokta", "ARC", "arc"), ("arc_cse", "Merkez, başlangıç, bitiş", "ARC C", "arccse"),
+            ("refedit", "Blok düzenle", "REFEDIT", "refedit"),
+        ]:
+            A(key, text, cmd, ic)
+
         m = mb.addMenu("Ö&lçü")
         for key, text, cmd, ic in [
             ("dli", "Doğrusal", "DIMLINEAR", "dimlinear"), ("dal", "Hizalı", "DIMALIGNED", "dimaligned"),
             ("dan", "Açısal", "DIMANGULAR", "dimangular"), ("dra", "Yarıçap", "DIMRADIUS", "dimradius"),
-            ("ddi", "Çap", "DIMDIAMETER", "dimradius"), ("dco", "Devam ettir", "DIMCONTINUE", None),
-            ("dba", "Taban çizgisi", "DIMBASELINE", None), ("le", "Kılavuz (Leader)", "QLEADER", "leader"),
+            ("ddi", "Çap", "DIMDIAMETER", "dimdiameter"), ("dco", "Devam ettir", "DIMCONTINUE", "dimcontinue"),
+            ("dba", "Taban çizgisi", "DIMBASELINE", "dimbaseline"), ("le", "Kılavuz (Leader)", "QLEADER", "leader"),
         ]:
             if key is None:
                 m.addSeparator()
@@ -256,13 +276,13 @@ class MainWindow(QMainWindow):
             ("mirror", "Aynala", "MIRROR", "mirror"), ("offset", "Ofset", "OFFSET", "offset"),
             ("array", "Dizi", "ARRAY", "array"), ("move", "Taşı", "MOVE", "move"),
             ("rotate", "Döndür", "ROTATE", "rotate"), ("scale", "Ölçekle", "SCALE", "scale"),
-            ("stretch", "Gerdir", "STRETCH", "stretch"), ("lengthen", "Uzunluk değiştir", "LENGTHEN", None),
+            ("stretch", "Gerdir", "STRETCH", "stretch"), ("lengthen", "Uzunluk değiştir", "LENGTHEN", "lengthen"),
             ("trim", "Buda", "TRIM", "trim"), ("extend", "Uzat", "EXTEND", "extend"),
-            ("break", "Kır", "BREAK", "break"), ("brp", "Noktadan kır", "BREAKATPOINT", None),
+            ("break", "Kır", "BREAK", "break"), ("brp", "Noktadan kır", "BREAKATPOINT", "brp"),
             ("join", "Birleştir", "JOIN", "join"), ("chamfer", "Pah", "CHAMFER", "chamfer"),
-            ("align", "Hizala (Align)", "ALIGN", "move"),
+            ("align", "Hizala (Align)", "ALIGN", "align"),
             ("fillet", "Kavis (Fillet)", "FILLET", "fillet"), ("explode", "Patlat", "EXPLODE", "explode"),
-            (None,) * 4, ("ed", "Yazı düzenle", "TEXTEDIT", None),
+            (None,) * 4, ("ed", "Yazı düzenle", "TEXTEDIT", "text"),
         ]:
             if key is None:
                 m.addSeparator()
@@ -272,19 +292,19 @@ class MainWindow(QMainWindow):
                 m.addAction(A(key, text, cmd, ic))
 
         m = mb.addMenu("&Araçlar")
-        m.addAction(A("osnapset", "Nesne yakalama ayarları...", "OSNAP"))
+        m.addAction(A("osnapset", "Nesne yakalama ayarları...", "OSNAP", "options"))
         m.addAction(A("dist", "Uzaklık ölç", "DIST", "dist"))
-        m.addAction(A("area", "Alan ölç", "AREA"))
-        m.addAction(A("list", "Liste", "LIST"))
-        m.addAction(A("id", "Nokta koordinatı", "ID"))
+        m.addAction(A("area", "Alan ölç", "AREA", "area"))
+        m.addAction(A("list", "Liste", "LIST", "list"))
+        m.addAction(A("id", "Nokta koordinatı", "ID", "id"))
         m.addSeparator()
-        m.addAction(A("purge", "Temizle (Purge)", "PURGE"))
+        m.addAction(A("purge", "Temizle (Purge)", "PURGE", "purge"))
         m.addAction(A("dwgsupport", "DWG desteğini kur / güncelle...", None, None, None,
                       self.install_dwg_support))
-        m.addAction(A("options", "Seçenekler...", "OPTIONS"))
+        m.addAction(A("options", "Seçenekler...", "OPTIONS", "options"))
 
         m = mb.addMenu("&Yardım")
-        m.addAction(A("help", "Komut yardımı", None, None, "F1", self.show_help))
+        m.addAction(A("help", "Komut yardımı", None, "help", "F1", self.show_help))
         m.addAction(A("about", f"{APP_NAME} hakkında", None, None, None, self.about))
 
         # toolbars
@@ -1107,7 +1127,11 @@ def apply_dark_theme(app: QApplication):
         QStatusBar QToolButton { padding: 1px 6px; }
         QTabWidget#ribbonTabs QTabBar::tab { padding: 4px 16px; }
         QFrame#ribbonPanel { border-right: 1px solid #454c57; }
-        QLabel#ribbonPanelTitle { color: #9aa6b4; font-size: 8pt; background: #323942; }
+        QToolButton#ribbonPanelTitle { color: #9aa6b4; font-size: 8pt; background: #323942; border: none;
+                                       padding: 0px 4px; }
+        QToolButton#ribbonPanelTitle:hover { color: #ffffff; background: #3d4652; }
+        QToolButton#ribbonPanelTitle::menu-indicator, QToolButton#ribbonCollapsed::menu-indicator { image: none; }
+        QFrame#ribbonPanel QToolButton { padding: 1px 2px; }
         QToolButton#appButton { background: #2F6299; color: white; border: none; padding: 2px 10px 2px 6px;
                                 font-weight: bold; }
         QToolButton#appButton:hover { background: #3a74b2; }

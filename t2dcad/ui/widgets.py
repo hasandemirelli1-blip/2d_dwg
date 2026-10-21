@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QComboBox, QColorDialog, QInputDialog
 from ezdxf.colors import aci2rgb
 
 from t2dcad.ui.icons import color_icon
+from t2dcad.i18n import tr
 
 ACI_NAMES = {1: "Kırmızı", 2: "Sarı", 3: "Yeşil", 4: "Camgöbeği", 5: "Mavi", 6: "Eflatun", 7: "Beyaz/Siyah",
              8: "8", 9: "9"}
@@ -26,17 +27,17 @@ def aci_qcolor(aci: int) -> QColor:
 
 def aci_name(aci: int) -> str:
     if aci == 256:
-        return "KatmanaGöre"
+        return tr("KatmanaGöre")
     if aci == 0:
-        return "BlokaGöre"
+        return tr("BlokaGöre")
     return ACI_NAMES.get(aci, f"Renk {aci}")
 
 
 def lw_name(lw: int) -> str:
     if lw == -1:
-        return "KatmanaGöre"
+        return tr("KatmanaGöre")
     if lw == -2:
-        return "BlokaGöre"
+        return tr("BlokaGöre")
     if lw == -3:
         return "Varsayılan"
     return f"{lw / 100:.2f} mm"
@@ -56,8 +57,8 @@ class ColorCombo(QComboBox):
         self.blockSignals(True)
         self.clear()
         if self._bylayer:
-            self.addItem(color_icon(QColor(200, 200, 200)), "KatmanaGöre", 256)
-            self.addItem(color_icon(QColor(200, 200, 200)), "BlokaGöre", 0)
+            self.addItem(color_icon(QColor(200, 200, 200)), tr("KatmanaGöre"), 256)
+            self.addItem(color_icon(QColor(200, 200, 200)), tr("BlokaGöre"), 0)
         for i in range(1, 10):
             self.addItem(color_icon(aci_qcolor(i)), aci_name(i), i)
         if extra and not (1 <= extra <= 9) and extra not in (0, 256):
@@ -104,8 +105,8 @@ class LinetypeCombo(QComboBox):
         self.blockSignals(True)
         self.clear()
         if self._bylayer:
-            self.addItem("KatmanaGöre", "BYLAYER")
-            self.addItem("BlokaGöre", "BYBLOCK")
+            self.addItem(tr("KatmanaGöre"), "BYLAYER")
+            self.addItem(tr("BlokaGöre"), "BYBLOCK")
         for lt in self.doc.linetypes:
             n = lt.dxf.name
             if n.upper() in ("BYLAYER", "BYBLOCK"):
@@ -137,8 +138,8 @@ class LineweightCombo(QComboBox):
     def __init__(self, bylayer=True, parent=None):
         super().__init__(parent)
         if bylayer:
-            self.addItem("KatmanaGöre", -1)
-            self.addItem("BlokaGöre", -2)
+            self.addItem(tr("KatmanaGöre"), -1)
+            self.addItem(tr("BlokaGöre"), -2)
         self.addItem("Varsayılan", -3)
         for lw in LINEWEIGHTS:
             self.addItem(lw_name(lw), lw)

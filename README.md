@@ -41,6 +41,9 @@ DWG kapalı bir formattır; bu işi ücretsiz **ODA File Converter** yapar.
 ### Arayüz
 * **Şerit (Ribbon)** veya **Klasik menü**: Görünüm menüsünden, durum çubuğundaki ☰ düğmesinden ya da
   `RIBBON` / `MENUBAR` komutlarıyla seçilir. Seçim hatırlanır.
+* Şerit progeCAD/AutoCAD gibi kompakttır: küçük düğmeler üçlü sıralanır, ▾ oklu düğmeler seçenekleri gruplar
+  (Çember: merkez-yarıçap / çap / 2P / 3P / TTR, Buda/Uzat, Kavis/Pah, ölçü türleri...). Panel başlığındaki ▾ ek
+  komutları açar. Pencere dar ise sağdaki paneller tek düğmeye küçülür, kaydırma gerekmez.
 * **Başlangıç sayfası**: son açılan çizimler küçük resimleriyle listelenir (sağ tık → listeden kaldır).
 * **Otomatik tamamlama**: komut yazmaya başlayınca (ör. `R`, `RE`) AutoCAD'deki gibi öneri listesi açılır.
   ↑/↓ ile seçin, Enter/Boşluk ile çalıştırın.

@@ -339,3 +339,22 @@ def test_image_attach_and_align(tab, tmp_path):
     im = _ent_list(tab, "IMAGE")[0]
     assert Vec2(im.dxf.insert).isclose(Vec2(10, 10))
     assert Vec2(im.dxf.u_pixel).magnitude * 200 == pytest.approx(100)
+
+
+def test_circle_ttr_and_ribbon_variants(tab):
+    run(tab, "L", "0,0", "100,0", "")
+    run(tab, "L", "0,0", "0,100", "")
+    l1, l2 = _ent_list(tab, "LINE")
+    run(tab, "C", "T")
+    tab.manager.send((l1, Vec2(30, 0)))
+    tab.manager.send((l2, Vec2(0, 30)))
+    run(tab, "10")
+    c = _ent_list(tab, "CIRCLE")[0]
+    assert Vec2(c.dxf.center).isclose(Vec2(10, 10)) and abs(c.dxf.radius - 10) < 1e-9
+    # ribbon drop-down variants start the command with its option
+    tab.main.run("CIRCLE 2P")
+    run(tab, "200,0", "220,0")
+    tab.main.run("CIRCLE D")
+    run(tab, "300,0", "30")
+    radii = sorted(round(e.dxf.radius, 6) for e in _ent_list(tab, "CIRCLE"))
+    assert radii == [10, 10, 15]

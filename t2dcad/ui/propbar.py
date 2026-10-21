@@ -7,6 +7,7 @@ from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QComboBox
 
 from t2dcad.ui.icons import color_icon
 from t2dcad.ui.widgets import ColorCombo, LineweightCombo, aci_qcolor
+from t2dcad.i18n import tr
 
 
 class PropertyBar(QWidget):
@@ -55,8 +56,8 @@ class PropertyBar(QWidget):
             self.lt_combo.blockSignals(True)
             self.lt_combo.clear()
             if tab is not None:
-                self.lt_combo.addItem("KatmanaGöre", "BYLAYER")
-                self.lt_combo.addItem("BlokaGöre", "BYBLOCK")
+                self.lt_combo.addItem(tr("KatmanaGöre"), "BYLAYER")
+                self.lt_combo.addItem(tr("BlokaGöre"), "BYBLOCK")
                 for lt in tab.doc.doc.linetypes:
                     if lt.dxf.name.upper() not in ("BYLAYER", "BYBLOCK"):
                         self.lt_combo.addItem(lt.dxf.name, lt.dxf.name)

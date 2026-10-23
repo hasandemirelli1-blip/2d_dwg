@@ -3,6 +3,7 @@ ortho/polar, selection and grips."""
 from __future__ import annotations
 
 import math
+import time
 from typing import Optional
 
 from ezdxf.math import Vec2, Matrix44
@@ -49,6 +50,8 @@ class CadCanvas(QWidget):
         self._sel_img: Optional[QImage] = None
         self._sel_dirty = True
         self._base_view = None  # view (cx, cy, scale) of the cached images
+        self._base_approx = False  # cache patched from a scaled image: render again when idle
+        self._patch_slow = False  # patching took too long: wait for the idle render instead
         self._sel_view = None
         # pan/zoom first move the cached image, the real render follows when idle
         self._render_timer = QTimer(self)
@@ -176,7 +179,8 @@ class CadCanvas(QWidget):
         self.update()
 
     def _render_now(self):
-        if self._base_view != self._view():
+        self._patch_slow = False
+        if self._base_view != self._view() or self._base_approx:
             self._base_dirty = True
             self._sel_dirty = True
             self.update()
@@ -228,11 +232,10 @@ class CadCanvas(QWidget):
         dpr = self.devicePixelRatioF()
         img = QImage(int(self.width() * dpr), int(self.height() * dpr), QImage.Format_ARGB32_Premultiplied)
         img.setDevicePixelRatio(dpr)
-        img.fill(self.bg_color)
+        # transparent: the background and the grid are painted live under it
+        img.fill(Qt.transparent)
         p = QPainter(img)
         p.setRenderHint(QPainter.Antialiasing, settings.get_bool("antialias", True))
-        if self.grid:
-            self._paint_grid(p)
         x0, y0, x1, y1 = self.visible_rect()
         source = QRectF(x0, y0, x1 - x0, y1 - y0)
         p.translate(0, self.height())
@@ -261,7 +264,73 @@ class CadCanvas(QWidget):
         p.end()
         self._base = img
         self._base_dirty = False
+        self._base_approx = False
         self._base_view = self._view()
+
+    def _patch_base(self):
+        """While panning/zooming: move the cached image to the new view and render
+        only the strips which came into view, so no part of the screen stays empty."""
+        bt = self._cache_transform(self._base_view)
+        if bt is None or getattr(self.tab, "refedit", None) is not None:
+            return
+        k, tx, ty = bt.m11(), bt.dx(), bt.dy()
+        if k > 1 + 1e-9:
+            return  # zoom in: the enlarged image covers the screen, sharpened when idle
+        W, H = self.width(), self.height()
+        exact = abs(k - 1) < 1e-9 and abs(tx - round(tx)) < 1e-6 and abs(ty - round(ty)) < 1e-6
+        if exact:
+            tx, ty = float(round(tx)), float(round(ty))
+            bt = QTransform(1, 0, 0, 1, tx, ty)
+        r = QRectF(tx, ty, W * k, H * k)
+        if not r.intersects(QRectF(0, 0, W, H)):
+            self._base_dirty = True  # jumped away: full render
+            return
+        t0 = time.perf_counter()
+        img = QImage(self._base.size(), QImage.Format_ARGB32_Premultiplied)
+        img.setDevicePixelRatio(self._base.devicePixelRatio())
+        img.fill(Qt.transparent)
+        p = QPainter(img)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, not exact)
+        p.setTransform(bt)
+        p.drawImage(0, 0, self._base)
+        p.resetTransform()
+        p.setRenderHint(QPainter.Antialiasing, settings.get_bool("antialias", True))
+        # exposed strips (1 px overlap when the old image is scaled)
+        e = 0 if exact else 1
+        top, bottom = max(0.0, r.top()), min(float(H), r.bottom())
+        left, right = max(0.0, r.left()), min(float(W), r.right())
+        strips = []
+        if top > 0:
+            strips.append(QRectF(0, 0, W, top + e))
+        if bottom < H:
+            strips.append(QRectF(0, bottom - e, W, H - bottom + e))
+        if left > 0:
+            strips.append(QRectF(0, top, left + e, bottom - top))
+        if right < W:
+            strips.append(QRectF(right - e, top, W - right + e, bottom - top))
+        for sr in strips:
+            self._render_region(p, sr)
+        p.end()
+        self._base = img
+        self._base_view = self._view()
+        self._base_approx = True  # strips may differ by antialiasing: final render when idle
+        if time.perf_counter() - t0 > 0.08:
+            self._patch_slow = True
+
+    def _render_region(self, p: QPainter, sr: QRectF):
+        """Render the drawing into the screen rectangle `sr` of painter `p`."""
+        W, H, s = self.width(), self.height(), self.scale
+        x0 = (sr.left() - W / 2) / s + self.cx
+        x1 = (sr.right() - W / 2) / s + self.cx
+        y0 = (H / 2 - sr.bottom()) / s + self.cy
+        y1 = (H / 2 - sr.top()) / s + self.cy
+        p.save()
+        p.setClipRect(sr)
+        p.translate(0, H)
+        p.scale(1, -1)
+        target = QRectF(sr.left(), H - sr.bottom(), sr.width(), sr.height())
+        self.renderer.scene.render(p, target, QRectF(x0, y0, x1 - x0, y1 - y0), Qt.IgnoreAspectRatio)
+        p.restore()
 
     def _paint_grid(self, p: QPainter):
         g = self.grid_unit
@@ -340,6 +409,10 @@ class CadCanvas(QWidget):
     def paintEvent(self, ev):
         moving = self._render_timer.isActive()
         stale = self._base is not None and self._base_view != self._view()
+        if (moving and stale and not self._patch_slow and not self._base_dirty
+                and self._base.size() == self.size() * self.devicePixelRatioF()):
+            self._patch_base()
+            stale = self._base_view != self._view()
         if (self._base is None or self._base_dirty or self._base.size() != self.size() * self.devicePixelRatioF()
                 or (stale and not moving)):
             self._render_base()
@@ -349,11 +422,13 @@ class CadCanvas(QWidget):
         elif self._sel_img is None or self._sel_img.size() != self._base.size():
             self._render_selection()
         p = QPainter(self)
+        p.fillRect(self.rect(), self.bg_color)
+        if self.grid:
+            self._paint_grid(p)  # live: always complete, also while panning
         bt = self._cache_transform(self._base_view)
         if bt is None or bt.isIdentity():
             p.drawImage(0, 0, self._base)
         else:
-            p.fillRect(self.rect(), self.bg_color)
             p.setTransform(bt)
             p.setRenderHint(QPainter.SmoothPixmapTransform, False)
             p.drawImage(0, 0, self._base)

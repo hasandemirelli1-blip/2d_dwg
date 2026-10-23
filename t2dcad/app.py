@@ -384,7 +384,11 @@ class MainWindow(QMainWindow):
         sb = QStatusBar()
         self.setStatusBar(sb)
         self.coord_label = QLabel("0.0000, 0.0000")
-        self.coord_label.setMinimumWidth(220)
+        # fixed size: a label whose size can change asks the main window for a new
+        # layout on every mouse move, which is very slow with docked panels/toolbars
+        fm = self.coord_label.fontMetrics()
+        self.coord_label.setFixedSize(fm.horizontalAdvance("-00000000.0000, -00000000.0000, 0.0000") + 8,
+                                      fm.height() + 4)
         sb.addWidget(self.coord_label)
         self.toggle_buttons = {}
         for key, text, tip in [("grid", "IZGARA", "Izgara (F7)"), ("snapmode", "SNAP", "Adım yakalama (F9)"),

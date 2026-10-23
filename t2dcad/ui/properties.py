@@ -33,6 +33,7 @@ class PropertiesPanel(QWidget):
         outer.addWidget(self.header)
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         outer.addWidget(self.scroll, 1)
         self.body = QWidget()
         self.scroll.setWidget(self.body)
@@ -81,6 +82,11 @@ class PropertiesPanel(QWidget):
         from PySide6.QtCore import QTimer
 
         def apply():
+            # value boxes shrink with the panel instead of running under the scroll bar
+            for cb in self.body.findChildren(QComboBox):
+                cb.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+                cb.setMinimumContentsLength(4)
+                cb.setMinimumWidth(50)
             self._lay.activate()
             self.body.setMinimumHeight(self._lay.minimumSize().height())
         QTimer.singleShot(0, apply)
@@ -89,6 +95,9 @@ class PropertiesPanel(QWidget):
         g = QGroupBox(title)
         f = QFormLayout(g)
         f.setLabelAlignment(Qt.AlignLeft)
+        f.setContentsMargins(6, 4, 4, 4)
+        f.setHorizontalSpacing(6)
+        f.setVerticalSpacing(2)
         self._lay.addWidget(g)
         return f
 
@@ -150,7 +159,7 @@ class PropertiesPanel(QWidget):
         f.addRow("Katman", layer)
         f.addRow("Çizgi tipi", lt)
         f.addRow("Ç. tipi ölçeği", lts)
-        f.addRow("Çizgi kalınlığı", lw)
+        f.addRow("Kalınlık", lw)
 
     def _ro(self, f, label, value):
         l = QLineEdit(value)
@@ -308,10 +317,10 @@ class PropertiesPanel(QWidget):
                 lambda c, ov, k=k, i=i: _set_arrow(ov, k, codes[i])))
             g.addRow(label, cb)
         self._dim_num(g, "Ok boyutu", get("dimasz", 2.5), "dimasz")
-        self._dim_num(g, "Uzatma çizgisi taşması", get("dimexe", 1.25), "dimexe")
-        self._dim_num(g, "Uzatma çizgisi ofseti", get("dimexo", 0.625), "dimexo")
-        for label, key in (("Uzatma çizgisi 1 gizle", "dimse1"), ("Uzatma çizgisi 2 gizle", "dimse2"),
-                           ("Ölçü çizgisi 1 gizle", "dimsd1"), ("Ölçü çizgisi 2 gizle", "dimsd2")):
+        self._dim_num(g, "Uz. çizgi taşma", get("dimexe", 1.25), "dimexe")
+        self._dim_num(g, "Uz. çizgi ofset", get("dimexo", 0.625), "dimexo")
+        for label, key in (("Uz. çizgi 1 gizle", "dimse1"), ("Uz. çizgi 2 gizle", "dimse2"),
+                           ("Ölçü çiz. 1 gizle", "dimsd1"), ("Ölçü çiz. 2 gizle", "dimsd2")):
             cb = QCheckBox()
             cb.setChecked(bool(get(key, 0)))
             cb.toggled.connect(lambda v, k=key: self._apply_dim(lambda c, ov, k=k, v=v: ov.update({k: 1 if v else 0})))
@@ -329,7 +338,7 @@ class PropertiesPanel(QWidget):
         g.addRow("Yazı stili", tst)
         self._font_row(g, get("dimtxsty", "Standard") or "Standard",
                        lambda style: self._apply_dim(lambda c, ov, s=style: ov.update({"dimtxsty": s})))
-        self._dim_num(g, "Yazı yüksekliği", get("dimtxt", 2.5), "dimtxt")
+        self._dim_num(g, "Yazı boyu", get("dimtxt", 2.5), "dimtxt")
         self._dim_num(g, "Yazı ofseti", get("dimgap", 0.625), "dimgap")
         tc = ColorCombo()
         tc.set_value(get("dimclrt", 0) or 0)
@@ -347,7 +356,7 @@ class PropertiesPanel(QWidget):
         te = QLineEdit(d.get("text", "<>") or "<>")
         te.setToolTip("<> = ölçülen değer. Örnek: Ø<> veya 2x<> H7")
         te.editingFinished.connect(lambda: self._apply_dim(lambda c, ov, t=te.text(): c.dxf.set("text", t or "<>")))
-        g.addRow("Metin geçersiz kıl", te)
+        g.addRow("Ölçü metni", te)
 
         g = self._group("Birincil birimler")
         post = get("dimpost", "") or ""
@@ -368,12 +377,12 @@ class PropertiesPanel(QWidget):
         dec.setCurrentIndex(min(6, int(get("dimdec", 2))))
         dec.activated.connect(lambda i: self._apply_dim(lambda c, ov, i=i: ov.update({"dimdec": i})))
         g.addRow("Hassasiyet", dec)
-        self._dim_num(g, "Ölçü ölçek faktörü", get("dimlfac", 1.0), "dimlfac")
+        self._dim_num(g, "Ölçü çarpanı", get("dimlfac", 1.0), "dimlfac")
         self._dim_num(g, "Yuvarlama", get("dimrnd", 0.0), "dimrnd")
         tz = QCheckBox()
         tz.setChecked(bool(int(get("dimzin", 8)) & 8))
         tz.toggled.connect(lambda v: self._apply_dim(lambda c, ov, v=v: ov.update({"dimzin": 8 if v else 0})))
-        g.addRow("Sondaki sıfırları gizle", tz)
+        g.addRow("Sondaki 0 gizle", tz)
         sep = QComboBox()
         sep.addItems([". (nokta)", ", (virgül)"])
         sep.setCurrentIndex(1 if int(get("dimdsep", 46)) == 44 else 0)
@@ -381,7 +390,7 @@ class PropertiesPanel(QWidget):
         g.addRow("Ondalık ayırıcı", sep)
 
         g = self._group("Sığdır")
-        self._dim_num(g, "Genel ölçek (DIMSCALE)", get("dimscale", 1.0), "dimscale")
+        self._dim_num(g, "Genel ölçek", get("dimscale", 1.0), "dimscale")
 
     def _dim_num(self, f, label, value, key):
         l = QLineEdit(fmt(float(value or 0)))

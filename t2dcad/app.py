@@ -67,8 +67,8 @@ class MainWindow(QMainWindow):
         dock = QDockWidget("Komut Satırı", self)
         dock.setObjectName("cmdline")
         dock.setWidget(self.cmdline)
-        dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable |
-                         QDockWidget.DockWidgetClosable)
+        dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable)
+        dock.setMinimumHeight(70)
         self.addDockWidget(Qt.BottomDockWidgetArea, dock)
         self.cmd_dock = dock
 
@@ -107,10 +107,22 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
         self.set_ui_mode(settings.get("ui_mode", "ribbon"), quiet=True)
+        self._ensure_cmdline()
         from t2dcad import i18n
         if i18n.lang() == "en":
             i18n.translate_tree(self)
         self.cmdline.add_history(f"{APP_NAME} {__version__} - AutoCAD benzeri 2B çizim. Yardım için F1.")
+
+    def _ensure_cmdline(self):
+        """The command line is always shown at start (a saved window layout may have
+        it closed, or floating outside the screen): docked at the bottom."""
+        d = self.cmd_dock
+        if d.isFloating():
+            d.setFloating(False)
+        if self.dockWidgetArea(d) == Qt.NoDockWidgetArea:
+            self.addDockWidget(Qt.BottomDockWidgetArea, d)
+        d.show()
+        d.raise_()
 
     # ------------------------------------------------------------ helpers
     def current_tab(self) -> DocumentTab | None:

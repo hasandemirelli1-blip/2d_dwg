@@ -10,11 +10,18 @@ katmanlar ve yazdırma AutoCAD'deki gibi çalışır.
 
 ## 1. Kurulum (Windows)
 
-### A) Hazır program (önerilen)
-1. GitHub'da bu deponun **Actions** sekmesine girin → en son başarılı **"Windows build"** çalışmasını açın.
-2. Sayfanın altındaki **Artifacts** bölümünden `T2D-CAD-windows` dosyasını indirin.
-3. ZIP'i bir klasöre açın (ör. `C:\T2D-CAD`) ve **`T2D-CAD.exe`** dosyasını çalıştırın.
-   İsterseniz exe'ye sağ tıklayıp masaüstüne kısayol gönderin.
+### A) Kurulum dosyası (önerilen)
+1. GitHub'da deponun **Releases** bölümünden en son sürümün **`T2D-CAD-Kurulum-x.y.z.exe`** dosyasını indirin.
+2. Çift tıklayın, **İleri → Kur**. Yönetici yetkisi gerekmez; program
+   `%LOCALAPPDATA%\Programs\T2D-CAD` klasörüne kurulur.
+3. **Masaüstü** ve **Başlat menüsü** kısayolları otomatik oluşur. İsterseniz kurulumda
+   ".dwg ve .dxf dosyalarını T2D-CAD ile aç" seçeneğini işaretleyin.
+4. Yeni sürümü kurmak için aynı şekilde yeni kurulum dosyasını çalıştırın (ayarlar korunur).
+   Kaldırmak için: Ayarlar → Uygulamalar → T2D-CAD → Kaldır.
+
+Kurulum dosyası her derlemede Actions sayfasındaki **`T2D-CAD-Kurulum`** artifact'ında da bulunur
+(GitHub artifact'ları ZIP olarak indirir; içindeki exe'yi çalıştırın). Kurulumsuz kullanmak için
+`T2D-CAD-windows` artifact'ını bir klasöre açıp `T2D-CAD.exe`'yi çalıştırabilirsiniz.
 
 ### B) Kaynak koddan çalıştırma
 1. [python.org](https://www.python.org/downloads/) adresinden Python 3.12 kurun ("Add python.exe to PATH" seçili olsun).

@@ -7,12 +7,13 @@ import tempfile
 import traceback
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, QSize
+from PySide6.QtCore import Qt, QTimer, QSize, QEvent
 from PySide6.QtGui import QAction, QKeySequence, QPalette, QColor, QIcon, QShortcut
 from PySide6.QtWidgets import (QApplication, QMainWindow, QTabWidget, QDockWidget, QToolBar, QLabel,
                                QStatusBar, QToolButton, QFileDialog, QMessageBox, QComboBox, QInputDialog,
                                QWidget, QDialog, QVBoxLayout, QTextBrowser, QDialogButtonBox, QStyleFactory,
-                               QTabBar, QProgressDialog, QSplashScreen)
+                               QTabBar, QProgressDialog, QSplashScreen, QLineEdit, QTextEdit,
+                               QPlainTextEdit, QAbstractSpinBox)
 
 from ezdxf.math import Vec2
 
@@ -108,10 +109,49 @@ class MainWindow(QMainWindow):
                 pass
         self.set_ui_mode(settings.get("ui_mode", "ribbon"), quiet=True)
         self._ensure_cmdline()
+        # Esc and typed commands work wherever the keyboard focus is (like AutoCAD)
+        QApplication.instance().installEventFilter(self)
         from t2dcad import i18n
         if i18n.lang() == "en":
             i18n.translate_tree(self)
         self.cmdline.add_history(f"{APP_NAME} {__version__} - AutoCAD benzeri 2B çizim. Yardım için F1.")
+
+    def eventFilter(self, obj, ev):
+        if (ev.type() == QEvent.KeyPress and isinstance(obj, QWidget) and obj.window() is self
+                and QApplication.activePopupWidget() is None and QApplication.activeModalWidget() is None):
+            try:
+                if self._global_key(ev):
+                    return True
+            except RuntimeError:
+                pass
+        return super().eventFilter(obj, ev)
+
+    def _global_key(self, ev) -> bool:
+        """Keys pressed while the focus is not on the drawing or the command line
+        (ribbon, layer list, tabs, properties...): Esc cancels the command and
+        clears the selection, letters go to the command line."""
+        tab = self.current_tab()
+        if tab is None:
+            return False
+        fw = QApplication.focusWidget()
+        if fw is tab.canvas or fw is self.cmdline.edit:
+            return False  # handled there
+        in_props = fw is not None and self.props_dock.isAncestorOf(fw)
+        if ev.key() == Qt.Key_Escape:
+            self.cmdline.handle_key(ev)
+            if not in_props:  # leaving a properties field would apply its value
+                tab.canvas.setFocus()
+            return True
+        if isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)) or \
+                (isinstance(fw, QComboBox) and fw.isEditable()):
+            return False
+        text = ev.text()
+        if (text and text.isprintable() and not text.isspace()
+                and not (ev.modifiers() & (Qt.ControlModifier | Qt.AltModifier))):
+            tab.canvas.setFocus()
+            self.cmdline.handle_key(ev)
+            return True
+        return False
 
     def _ensure_cmdline(self):
         """The command line is always shown at start (a saved window layout may have

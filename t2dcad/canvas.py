@@ -928,6 +928,14 @@ class CadCanvas(QWidget):
 
     def enterEvent(self, ev):
         self.inside = True
+        # the drawing takes the keyboard when the mouse comes in (Esc works at once),
+        # unless a text field is being edited
+        from PySide6.QtWidgets import QApplication, QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox
+        fw = QApplication.focusWidget()
+        typing = isinstance(fw, (QLineEdit, QTextEdit, QPlainTextEdit, QAbstractSpinBox)) and \
+            fw is not self.tab.main.cmdline.edit
+        if fw is not self and not typing and self.window().isActiveWindow():
+            self.setFocus()
         self.update()
 
     def leaveEvent(self, ev):

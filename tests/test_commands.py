@@ -358,3 +358,30 @@ def test_circle_ttr_and_ribbon_variants(tab):
     run(tab, "300,0", "30")
     radii = sorted(round(e.dxf.radius, 6) for e in _ent_list(tab, "CIRCLE"))
     assert radii == [10, 10, 15]
+
+
+def test_escape_and_typing_with_focus_elsewhere(tab):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    w = tab.main
+    w.activateWindow()
+    run(tab, "L", "0,0")
+    assert tab.manager.active
+    for other in (w.tabs.tabBar(), w.prop_bars[0].layer_combo or w.tabs.tabBar()):
+        other.setFocusPolicy(Qt.StrongFocus)
+        other.setFocus()
+        QApplication.processEvents()
+        if not tab.manager.active:
+            run(tab, "L", "0,0")
+        QTest.keyClick(QApplication.focusWidget() or other, Qt.Key_Escape)
+        assert not tab.manager.active
+    # selection is cleared by Esc too
+    run(tab, "L", "0,0", "10,0", "")
+    tab.canvas.set_selection([list(tab.doc.msp)[0].dxf.handle])
+    w.tabs.tabBar().setFocus()
+    QTest.keyClick(w.tabs.tabBar(), Qt.Key_Escape)
+    assert tab.canvas.selection == []
+    # letters typed anywhere go to the command line
+    w.tabs.tabBar().setFocus()
+    QTest.keyClicks(w.tabs.tabBar(), "c")
+    assert w.cmdline.edit.text().lower() == "c"

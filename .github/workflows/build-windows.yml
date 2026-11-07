@@ -101,15 +101,31 @@ jobs:
           path: dist/T2D-CAD
           retention-days: 30
 
+      - name: Version
+        id: ver
+        shell: pwsh
+        run: |
+          $ver = python -c "import t2dcad; print(t2dcad.__version__)"
+          "version=$ver" >> $env:GITHUB_OUTPUT
+
       - name: Zip for release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push'
         shell: pwsh
         run: Compress-Archive -Path dist/T2D-CAD -DestinationPath T2D-CAD-windows.zip
 
-      - name: Release (only for version tags)
-        if: startsWith(github.ref, 'refs/tags/v')
+      # every push publishes the setup .exe as a Release (tag v<version>, created by the action)
+      - name: Release
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: T2D-CAD ${{ steps.ver.outputs.version }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          body: |
+            **Kurulum:** `T2D-CAD-Kurulum-${{ steps.ver.outputs.version }}.exe` dosyasını indirip çalıştırın.
+            Masaüstü ve Başlat menüsü kısayolları otomatik oluşur, yönetici yetkisi gerekmez.
+            Kurulumsuz kullanım için: `T2D-CAD-windows.zip`.
           files: |
             dist/T2D-CAD-Kurulum-*.exe
             T2D-CAD-windows.zip
